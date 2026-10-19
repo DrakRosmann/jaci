@@ -22,7 +22,15 @@ Jaci é a deusa tupi da Lua.
 | [`docs/`](docs/) | protocolo da interface e do enlace CCSDS |
 | [`tests/`](tests/) | teste de ponta a ponta do servidor |
 
-## Começar
+## Instalar
+
+Com Rust e Node.js 22 instalados, `./install.sh` compila e instala em `~/.local` (ou
+`sudo ./install.sh /usr` para todos): os programas `jaci` e `computador-de-bordo`, a interface e um
+atalho **Jaci** no menu de aplicativos, que sobe o servidor e abre o navegador (clicado de novo,
+só abre o navegador). A ação "Parar o Jaci" do atalho encerra o servidor. Os estados salvos ficam
+em `~/.local/share/jaci/estados`.
+
+## Começar pelo código
 
 Com Rust e Node.js 22 instalados:
 
@@ -31,7 +39,8 @@ Com Rust e Node.js 22 instalados:
 cargo run --release --bin jaci            # abra http://127.0.0.1:8080
 ```
 
-`jaci --list` mostra os cenários; `jaci --scenario tripulada` começa num deles (padrão: `sondagem`).
+`jaci --list` mostra os cenários; `jaci --scenario tripulada` começa num deles (padrão: `sondagem`);
+`--open` abre o navegador.
 `--start "2026-11-05 12:00:00"` escolhe a data (padrão: agora). Para outra máquina da rede,
 `--addr 0.0.0.0:8080`: sem `--token` (ou `JACI_TOKEN`), o servidor gera uma senha e mostra no log
 o endereço `http://<ip>:8080/?token=…`.

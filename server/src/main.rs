@@ -52,12 +52,17 @@ struct Args {
     /// Lista os cenários e sai.
     #[arg(long)]
     list: bool,
-    /// Pasta da interface compilada.
-    #[arg(long, default_value = "web/dist")]
-    web_dir: PathBuf,
+    /// Pasta da interface compilada (padrão: web/dist, ou a instalada em
+    /// <prefixo>/share/jaci/web).
+    #[arg(long)]
+    web_dir: Option<PathBuf>,
+    /// Abre o navegador na interface (se o Jaci já estiver rodando, só abre).
+    #[arg(long)]
+    open: bool,
     /// Pasta dos estados salvos.
-    #[arg(long, default_value = "estados")]
-    states_dir: PathBuf,
+    /// (padrão: ./estados no código, ~/.local/share/jaci/estados instalado)
+    #[arg(long)]
+    states_dir: Option<PathBuf>,
     /// Data e hora de início (UTC); padrão: agora.
     #[arg(long)]
     start: Option<String>,
@@ -98,6 +103,50 @@ struct Ctx {
     token: Option<String>,
 }
 
+/// A interface: a pedida, a do código (web/dist) ou a instalada ao lado do binário.
+fn web_dir(args: &Args) -> PathBuf {
+    if let Some(d) = &args.web_dir {
+        return d.clone();
+    }
+    let local = PathBuf::from("web/dist");
+    if local.join("index.html").exists() {
+        return local;
+    }
+    std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent()?.parent().map(|p| p.join("share/jaci/web")))
+        .filter(|d| d.join("index.html").exists())
+        .unwrap_or(local)
+}
+
+/// Estados salvos: o pedido, ./estados no código ou ~/.local/share/jaci/estados.
+fn states_dir(args: &Args) -> PathBuf {
+    if let Some(d) = &args.states_dir {
+        return d.clone();
+    }
+    if PathBuf::from("web/dist").exists() || PathBuf::from("Cargo.toml").exists() {
+        return PathBuf::from("estados");
+    }
+    let data = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+        .unwrap_or_else(|| PathBuf::from("."));
+    data.join("jaci/estados")
+}
+
+fn open_browser(url: &str) {
+    let cmd = if cfg!(target_os = "windows") {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    if let Err(e) = std::process::Command::new(cmd).arg(url).spawn() {
+        tracing::warn!("não abri o navegador ({e}): abra {url}");
+    }
+}
+
 pub fn now_j2000() -> f64 {
     let unix = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
     unix - 946_728_000.0
@@ -129,7 +178,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("cenário {} em {}", world.mission, format_utc(world.t));
     let app = Arc::new(Mutex::new(App {
         world,
-        states_dir: args.states_dir.clone(),
+        states_dir: states_dir(&args),
         sent_events: 0,
         dict_sig: String::new(),
         tc_routes: HashMap::new(),
@@ -248,13 +297,27 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    let url_token = token.clone();
     let ctx = Ctx { app, tx, token };
-    let index = args.web_dir.join("index.html");
-    let static_files = ServeDir::new(&args.web_dir).not_found_service(ServeFile::new(&index));
+    let web_dir = web_dir(&args);
+    let index = web_dir.join("index.html");
+    let static_files = ServeDir::new(&web_dir).not_found_service(ServeFile::new(&index));
     let router = Router::new().route("/ws", get(ws_handler)).fallback_service(static_files).with_state(ctx);
-    let listener = tokio::net::TcpListener::bind(addr).await.with_context(|| format!("porta {addr}"))?;
-    if !args.web_dir.join("index.html").exists() {
-        tracing::warn!("interface não encontrada em {} (compile com `npm run build` em web/)", args.web_dir.display());
+    let url = format!("http://{addr}/{}", url_token.as_ref().map(|t| format!("?token={t}")).unwrap_or_default());
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        // Já rodando (o atalho clicado de novo): só abre o navegador.
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse && args.open => {
+            open_browser(&url);
+            return Ok(());
+        }
+        Err(e) => return Err(e).with_context(|| format!("porta {addr}")),
+    };
+    if args.open {
+        open_browser(&url);
+    }
+    if !index.exists() {
+        tracing::warn!("interface não encontrada em {} (compile com `npm run build` em web/)", web_dir.display());
     }
     tracing::info!("Jaci em http://{addr}/");
     axum::serve(listener, router).await?;
