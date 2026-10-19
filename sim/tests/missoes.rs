@@ -245,3 +245,130 @@ fn depurar_reentrada() {
         v.phase.is_final()
     });
 }
+
+#[test]
+fn sonda_chega_a_marte() {
+    use jaci_sim::bodies::Body;
+    use jaci_sim::planner;
+    let mut w = scenarios::build("marte", t0(), 4).unwrap();
+    let vid = w.vehicles[0].id;
+    // Janela: o melhor ponto do porkchop.
+    let pc = planner::porkchop(Body::Earth, Body::Mars, w.t, 60.0, 180.0, 360.0, 30);
+    let (dep, tof_days, c3, _) = pc.best.unwrap();
+    println!("partida em {:.1} d, {tof_days:.0} d, C3 {c3:.1}", (dep - w.t) / 86_400.0);
+    let v = w.vehicle(vid).unwrap().clone();
+    let plan = planner::injection(&v, w.t, Body::Mars, (dep - w.t).max(3_600.0), tof_days * 86_400.0).expect("injeção");
+    println!("{}", plan.summary);
+    let arrival = w.t + plan.nodes[0].ignite_at.unwrap_or(plan.nodes[0].t) + tof_days * 86_400.0;
+    w.add_plan(vid, &plan);
+    // Até a injeção acabar.
+    let wait = (dep - w.t).max(3_600.0) + 6.0 * 3_600.0;
+    run_until(&mut w, wait, |w| {
+        let v = w.vehicle(vid).unwrap();
+        !v.guidance.nodes.is_empty() && v.guidance.nodes.iter().all(|n| n.done)
+    });
+    w.execute(vid, &Command::new("payload_sep")).expect("separação");
+    w.execute(vid, &Command::new("att_mode").with("mode", "earth")).unwrap();
+    // Sai da Terra.
+    w.warp = 1.0;
+    let mut steps = 0;
+    while w.vehicle(vid).unwrap().central == Body::Earth && steps < 200_000 {
+        let h = w.vehicle(vid).unwrap().max_step(w.t).min(3_600.0);
+        w.step(h);
+        steps += 1;
+    }
+    assert_eq!(w.vehicle(vid).unwrap().central, Body::Sun, "não saiu da Terra");
+    println!("saiu da Terra em {:.1} d", (w.t - t0()) / 86_400.0);
+    // Correção a meio caminho mirando 400 km de periastro.
+    let v = w.vehicle(vid).unwrap().clone();
+    let tcm = planner::tcm(&v, w.t, Body::Mars, arrival, 400.0).expect("TCM");
+    println!("{}", tcm.summary);
+    w.add_plan(vid, &tcm);
+    // Segunda correção, 20 dias antes da chegada.
+    let mut steps = 0;
+    while w.t < arrival - 20.0 * 86_400.0 && steps < 400_000 {
+        let h = w.vehicle(vid).unwrap().max_step(w.t).min(6.0 * 3_600.0).min(arrival - 20.0 * 86_400.0 - w.t).max(1.0);
+        w.step(h);
+        steps += 1;
+    }
+    let v = w.vehicle(vid).unwrap().clone();
+    if v.central == Body::Sun {
+        let tcm2 = planner::tcm(&v, w.t, Body::Mars, arrival, 400.0).expect("TCM 2");
+        println!("{}", tcm2.summary);
+        w.add_plan(vid, &tcm2);
+    }
+    let mut steps = 0;
+    while w.vehicle(vid).unwrap().central == Body::Sun && steps < 400_000 && w.t < arrival + 60.0 * 86_400.0 {
+        let h = w.vehicle(vid).unwrap().max_step(w.t).min(6.0 * 3_600.0);
+        w.step(h);
+        steps += 1;
+    }
+    let v = w.vehicle(vid).unwrap();
+    assert_eq!(v.central, Body::Mars, "não chegou a Marte (está em {:?})", v.central);
+    let el = &v.derived.elements;
+    let pe = (el.periapsis() - Body::Mars.radius()) / 1e3;
+    println!("chegou a Marte em {:.0} d; periastro da hipérbole {pe:.0} km", (w.t - t0()) / 86_400.0);
+    assert!(pe > 50.0 && pe < 3_000.0, "periastro {pe}");
+    // Captura.
+    let v = v.clone();
+    let cap = planner::capture(&v, 20_000.0).expect("captura");
+    println!("{}", cap.summary);
+    w.add_plan(vid, &cap);
+    let mut steps = 0;
+    while steps < 400_000 {
+        let v = w.vehicle(vid).unwrap();
+        if !v.guidance.nodes.is_empty() && v.guidance.nodes.iter().all(|n| n.done) {
+            break;
+        }
+        let h = v.max_step(w.t).min(600.0);
+        w.step(h);
+        steps += 1;
+    }
+    w.step(60.0);
+    let v = w.vehicle(vid).unwrap();
+    let el = &v.derived.elements;
+    let (pe, ap) = ((el.periapsis() - Body::Mars.radius()) / 1e3, (el.apoapsis() - Body::Mars.radius()) / 1e3);
+    print_events(&w);
+    println!("órbita de Marte {pe:.0} × {ap:.0} km, e = {:.3}", el.e);
+    assert!(el.e < 1.0, "não capturou");
+}
+
+#[test]
+#[ignore]
+fn depurar_injecao() {
+    use jaci_sim::bodies::Body;
+    use jaci_sim::orbit::lambert;
+    use jaci_sim::planner;
+    let mut w = scenarios::build("marte", t0(), 4).unwrap();
+    let vid = w.vehicles[0].id;
+    let pc = planner::porkchop(Body::Earth, Body::Mars, w.t, 60.0, 180.0, 360.0, 30);
+    let (dep, tof_days, _, _) = pc.best.unwrap();
+    let v = w.vehicle(vid).unwrap().clone();
+    let depart_in = (dep - w.t).max(3_600.0);
+    let plan = planner::injection(&v, w.t, Body::Mars, depart_in, tof_days * 86_400.0).unwrap();
+    let t_dep = w.t + depart_in;
+    let (re_, ve_) = Body::Earth.helio_state(t_dep);
+    let (rp, _) = Body::Mars.helio_state(t_dep + tof_days * 86_400.0);
+    let (lv1, _) = lambert(re_, rp, tof_days * 86_400.0, Body::Sun.mu(), true).unwrap();
+    let vinf_plan = lv1 - ve_;
+    println!("v∞ planejado {:.0} m/s, declinação {:.1}°", vinf_plan.norm(), (vinf_plan.z / vinf_plan.norm()).asin().to_degrees());
+    let h = v.r.cross(v.v).unit();
+    println!("fora do plano da órbita de estacionamento: {:.1}°", (vinf_plan.dot(h) / vinf_plan.norm()).asin().to_degrees());
+    println!("plano: {} {:?}", plan.summary, plan.nodes.iter().map(|n| (n.target_energy, n.ignite_at)).collect::<Vec<_>>());
+    w.add_plan(vid, &plan);
+    let wait = depart_in + 6.0 * 3_600.0;
+    run_until(&mut w, wait, |w| {
+        let v = w.vehicle(vid).unwrap();
+        !v.guidance.nodes.is_empty() && v.guidance.nodes.iter().all(|n| n.done)
+    });
+    for e in w.events.iter().filter(|e| e.text.contains("Igni") || e.text.contains("Corte") || e.text.contains("queima") || e.text.contains("Queima")) {
+        println!("{:>9.0} {}", e.t - t0(), e.text);
+    }
+    // Assíntota real: velocidade em relação à Terra a 2 milhões de km.
+    let v = w.vehicle(vid).unwrap().clone();
+    let (r2, v2) = jaci_sim::orbit::propagate_kepler(v.r, v.v, 10.0 * 86_400.0, Body::Earth.mu());
+    println!("a 10 dias: {:.0} mil km, v {:.0} m/s", r2.norm() / 1e6, v2.norm());
+    println!("ângulo entre v∞ real e planejado: {:.1}°", v2.angle(vinf_plan).to_degrees());
+    let el = &v.derived.elements;
+    println!("e = {:.3}, energia C3 = {:.1}", el.e, (v.v.norm2() - 2.0 * Body::Earth.mu() / v.r.norm()) / 1e6);
+}

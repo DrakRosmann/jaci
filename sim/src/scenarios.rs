@@ -129,11 +129,17 @@ pub fn build(id: &str, t: f64, seed: u64) -> Option<World> {
                 let skip = w.launch.t_minus - 3_000.0;
                 w.t += skip;
                 w.launch.t_minus = 3_000.0;
+                let t_now = w.t;
                 for v in &mut w.vehicles {
                     if v.phase == Phase::Orbit {
                         let (r, vel) = crate::orbit::propagate_kepler(v.r, v.v, skip, v.central.mu());
                         v.r = r;
                         v.v = vel;
+                        // A atitude acompanha (senão a estação começa fora do apontamento).
+                        let env = Env { t: t_now, wind_speed: 0.0, wind_jet: 0.0, wind_from: 0.0, targets: &[], coarse: true };
+                        if let Some(q) = v.attitude_target(&env) {
+                            v.att = q;
+                        }
                     }
                 }
                 if let Some(v) = w.vehicles.iter_mut().find(|v| v.id == vid) {
@@ -228,6 +234,22 @@ mod tests {
         for s in SCENARIOS {
             let w = build(s.id, t, 1).unwrap_or_else(|| panic!("{}", s.id));
             assert!(!w.vehicles.is_empty());
+        }
+    }
+}
+
+#[cfg(test)]
+mod salvar {
+    #[test]
+    fn estado_vai_e_volta_em_json() {
+        let t = crate::time::from_calendar(2026, 10, 19, 12, 0, 0.0);
+        for s in super::SCENARIOS {
+            let mut w = super::build(s.id, t, 1).unwrap();
+            w.advance(2.0);
+            let j = serde_json::to_string(&w).unwrap();
+            let mut back: crate::world::World = serde_json::from_str(&j).unwrap_or_else(|e| panic!("{}: {e}", s.id));
+            back.advance(1.0);
+            assert_eq!(back.vehicles.len(), w.vehicles.len());
         }
     }
 }

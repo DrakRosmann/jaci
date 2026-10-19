@@ -483,6 +483,9 @@ pub fn burn_duration(v: &Vehicle, dv: f64, rcs: bool) -> f64 {
 }
 
 fn ignition_time(v: &Vehicle, n: &Node) -> f64 {
+    if let Some(t) = n.ignite_at {
+        return t;
+    }
     let dur = burn_duration(v, n.dv_rtn.norm(), n.rcs);
     n.t - if dur.is_finite() { dur / 2.0 } else { 0.0 }
 }
@@ -573,11 +576,20 @@ fn nodes(v: &mut Vehicle, t: f64, h: f64, out: &mut StepOutput) {
         thrust / mass * along
     };
     let stalled = !n.rcs && !v.any_engine_lit() && t > t_ign + 10.0;
+    // Queima de escape: corta pela energia (contando o empuxo que ainda vem no desligamento).
+    let energy_reached = n.target_energy.is_some_and(|e| {
+        let vn = v.v.norm();
+        vn * vn / 2.0 - v.central.mu() / v.r.norm() + vn * accel * 0.5 >= e
+    });
     let node = &mut v.guidance.nodes[i];
     node.remaining -= accel * h;
+    if n.target_energy.is_some() {
+        node.remaining = node.remaining.max(1.0);
+    }
     // O motor ainda empurra ~0,5 s enquanto desliga.
     let tail = if n.rcs { 0.0 } else { accel * 0.5 };
-    if node.remaining <= tail || stalled {
+    let dv_done = node.remaining <= tail && n.target_energy.is_none();
+    if dv_done || stalled || energy_reached {
         let residual = node.remaining.max(0.0);
         node.done = true;
         node.executing = false;
@@ -737,7 +749,7 @@ fn entry(v: &mut Vehicle, t: f64) {
     }
     v.guidance.next_entry_update = t + 4.0;
     // Distância a percorrer até o alvo e o rumo para ele.
-    let to_go = great_circle_km(d.lat, d.lon, lat_t, lon_t);
+    let dist_km = great_circle_km(d.lat, d.lon, lat_t, lon_t);
     let bearing = bearing_deg(d.lat, d.lon, lat_t, lon_t);
     // Busca o |rolamento| que faz o alcance previsto bater, medindo tudo ao
     // longo do rumo atual (o desvio lateral é com o sinal do rolamento).
@@ -768,7 +780,7 @@ fn entry(v: &mut Vehicle, t: f64) {
     let heading_err = ((bearing - d.heading_deg + 540.0) % 360.0) - 180.0;
     // Rolamento positivo põe a sustentação à direita (rumo crescente).
     let sign = v.guidance.bank_deg.signum();
-    let deadband = (2.0 + 0.002 * to_go).min(8.0);
+    let deadband = (2.0 + 0.002 * dist_km).min(8.0);
     let sign = if sign == 0.0 || heading_err.abs() > deadband { heading_err.signum() } else { sign };
     v.guidance.bank_deg = bank * if sign == 0.0 { 1.0 } else { sign };
 }

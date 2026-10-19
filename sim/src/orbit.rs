@@ -183,9 +183,16 @@ pub fn propagate_kepler(r0: Vec3, v0: Vec3, dt: f64, mu: f64) -> (Vec3, Vec3) {
     let vr0 = r0.dot(v0) / r0n;
     let alpha = 2.0 / r0n - v0.norm2() / mu;
     let sqmu = mu.sqrt();
-    // Chute inicial.
-    let mut chi = if alpha > 1e-12 {
+    // Chute inicial (Vallado, algoritmo 8): elipse, hipérbole ou quase parábola.
+    let mut chi = if alpha > 1e-6 {
         sqmu * dt * alpha
+    } else if alpha < -1e-12 {
+        let a = 1.0 / alpha;
+        let s = dt.signum();
+        let num = -2.0 * mu * alpha * dt;
+        let den = r0.dot(v0) + s * (-mu * a).sqrt() * (1.0 - r0n * alpha);
+        let g = (num / den).abs().max(1e-12);
+        s * (-a).sqrt() * g.ln()
     } else {
         sqmu * dt / r0n
     };
@@ -440,6 +447,13 @@ mod tests {
         let (r_ref, v_ref) = state_from_elements(&el1, MU);
         assert!((r1 - r_ref).norm() < 1e-2, "{}", (r1 - r_ref).norm());
         assert!((v1 - v_ref).norm() < 1e-5);
+        // Hipérbole de escape propagada por 10 dias: segue a conservação de energia.
+        let esc = Elements { a: -40_000e3, e: 1.2, i: 0.3, raan: 0.0, argp: 0.0, nu: 0.0 };
+        let (r0e, v0e) = state_from_elements(&esc, MU);
+        let (r10, v10) = propagate_kepler(r0e, v0e, 10.0 * 86_400.0, MU);
+        let energy = |r: Vec3, v: Vec3| v.norm2() / 2.0 - MU / r.norm();
+        assert!((energy(r10, v10) / energy(r0e, v0e) - 1.0).abs() < 1e-6, "{}", r10.norm());
+        assert!(r10.norm() > 1e9 && r10.norm() < 1e10, "{}", r10.norm());
         // Hipérbole também.
         let hyp = Elements { a: -20_000e3, e: 1.4, i: 0.2, raan: 0.0, argp: 0.0, nu: 0.1 };
         let (r0, v0) = state_from_elements(&hyp, MU);

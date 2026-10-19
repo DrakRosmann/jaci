@@ -123,7 +123,7 @@ fn thermal(mass: f64, area: f64, crewed: bool) -> Thermal {
     let k = (mass / 1000.0).max(0.2);
     let mut nodes = vec![
         node("struct", "Estrutura", 900.0 * mass * 0.5, area, 0.1, 0.0, 0.0, 0.0, 0.0, -100.0, 120.0),
-        node("avionics", "Aviônica", 900.0 * mass * 0.05, 0.0, 0.6, 3.0 * k, 0.0, 0.0, 0.0, -20.0, 60.0),
+        node("avionics", "Aviônica", 900.0 * mass * 0.05, 0.0, 0.6, 3.0 * k, 8.0 * k, 0.0, 10.0, -20.0, 60.0),
         node("battery", "Bateria", 900.0 * mass * 0.03, 0.0, 0.1, 0.8 * k, 15.0 * k, 5.0, 15.0, 0.0, 40.0),
         node("tanks", "Tanques", 900.0 * mass * 0.1, 0.0, 0.0, 1.5 * k, 20.0 * k, 8.0, 18.0, 5.0, 50.0),
     ];
@@ -163,6 +163,7 @@ fn power(solar_area: f64, eff: f64, tracking: bool, battery_wh: f64, loads: Vec<
         battery_w: 0.0,
         sun_angle: 0.0,
         brownout: false,
+        external: false,
     }
 }
 
@@ -277,6 +278,7 @@ fn base(kind: Kind, def_id: &str, name: &str, stages: Vec<Stage>, systems: Optio
         safe_mode: false,
         faults: vec![],
         parent: None,
+        ground_power: false,
     }
 }
 
@@ -379,7 +381,7 @@ fn capsula() -> Vehicle {
         thermal: thermal(12_000.0, 25.0, true),
         adcs: adcs(Vec3::new(15_000.0, 22_000.0, 22_000.0), None, 800.0, 350.0, 400.0, false),
         comms: comms(15.0, 2.2, 3.0, 20.0, 15.0, &[2.0, 64.0, 2_000.0], 32_000.0, true),
-        eclss: Some(eclss(4, &[("Cabine", 9.3)], 70.0, 30.0, 4.5, f64::INFINITY, 0.0, 120.0)),
+        eclss: Some(eclss(4, &[("Cabine", 9.3)], 70.0, 30.0, 4.5, UNLIMITED, 0.0, 120.0)),
         instruments: vec![],
     };
     let mut v = base(Kind::Capsule, "capsula", "Cápsula Jaci", vec![trunk, core], Some(sys), Shape::Capsule);
@@ -735,7 +737,7 @@ pub fn build(id: &str) -> Option<Vehicle> {
                     300.0,
                     300.0,
                     6.0,
-                    f64::INFINITY,
+                    UNLIMITED,
                     5.4,
                     2_000.0,
                 )),

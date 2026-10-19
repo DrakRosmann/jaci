@@ -128,9 +128,10 @@ pub fn defs(v: &Vehicle) -> Vec<TmDef> {
             d.push(lim(def("eps.reactant", "Reagentes da célula a combustível", "kg", "Energia"), (300.0, 1e9), (100.0, 1e9)));
         }
         for n in &sys.thermal.nodes {
+            let margin = 0.15 * (n.max_c - n.min_c);
             d.push(lim(
                 def(&format!("tcs.{}", n.id), &format!("Temperatura: {}", n.name), "°C", "Térmico"),
-                (n.min_c + 5.0, n.max_c - 5.0),
+                (n.min_c + margin, n.max_c - margin),
                 (n.min_c, n.max_c),
             ));
             if n.heater_w > 0.0 {
@@ -162,8 +163,12 @@ pub fn defs(v: &Vehicle) -> Vec<TmDef> {
             d.push(def("ecl.n2_tank", "N₂ de reserva", "kg", "Suporte de vida"));
             d.push(def("ecl.water", "Água", "kg", "Suporte de vida"));
             d.push(def("ecl.crew", "Tripulação", "", "Suporte de vida"));
-            d.push(lim(def("ecl.hr", "Frequência cardíaca média", "bpm", "Suporte de vida"), (45.0, 130.0), (35.0, 160.0)));
-            if e.scrubber_capacity.is_finite() {
+            if e.crew > 0 {
+                d.push(lim(def("ecl.hr", "Frequência cardíaca média", "bpm", "Suporte de vida"), (45.0, 130.0), (35.0, 160.0)));
+            } else {
+                d.push(def("ecl.hr", "Frequência cardíaca média", "bpm", "Suporte de vida"));
+            }
+            if e.scrubber_capacity < crate::subsystems::UNLIMITED {
                 d.push(lim(def("ecl.scrubber", "Capacidade dos cartuchos de LiOH", "kg CO₂", "Suporte de vida"), (2.0, 1e9), (0.5, 1e9)));
             }
         }
@@ -297,8 +302,8 @@ pub fn values(v: &Vehicle, t: f64) -> Vec<(String, f64)> {
             out.push(("ecl.n2_tank".into(), e.n2_tank_kg));
             out.push(("ecl.water".into(), e.water_kg));
             out.push(("ecl.crew".into(), e.crew as f64));
-            out.push(("ecl.hr".into(), e.heart_rate));
-            if e.scrubber_capacity.is_finite() {
+            out.push(("ecl.hr".into(), if e.crew > 0 { e.heart_rate } else { f64::NAN }));
+            if e.scrubber_capacity < crate::subsystems::UNLIMITED {
                 out.push(("ecl.scrubber".into(), e.scrubber_capacity));
             }
         }

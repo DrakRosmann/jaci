@@ -1,0 +1,28 @@
+[package]
+name = "jaci-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Servidor do Jaci: simulação, WebSocket para a interface e enlace CCSDS"
+
+[dependencies]
+anyhow = "1"
+axum = { version = "0.8", features = ["ws"] }
+clap = { version = "4", features = ["derive", "env"] }
+futures-util = "0.3"
+getrandom = "0.3"
+jaci-sim = { path = "../sim" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.6", features = ["fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[[bin]]
+name = "jaci"
+path = "src/main.rs"
+
+[[bin]]
+name = "computador-de-bordo"
+path = "src/bin/computador_de_bordo.rs"

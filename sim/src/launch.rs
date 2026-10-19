@@ -226,19 +226,18 @@ impl LaunchControl {
             seq.push((6.6, "Sequência de ignição dos motores líquidos", SeqAction::Ignition));
         }
         seq.push((0.0, "T-0: liberação", SeqAction::Liftoff));
+        // Contagem começando tarde: as notas e a espera programada que já passaram
+        // ficam para trás; as ações (armar a terminação, energia interna,
+        // carregamento…) executam logo no primeiro passo.
         self.sequence = seq
             .into_iter()
-            .map(|(at, name, action)| SeqItem { at, name: name.into(), action, done: at > t_minus + 1e-6 && action != SeqAction::Note })
+            .map(|(at, name, action)| SeqItem {
+                at,
+                name: name.into(),
+                action,
+                done: at > t_minus + 1e-6 && matches!(action, SeqAction::Note | SeqAction::BuiltInHold),
+            })
             .collect();
-        // O que já passou (contagem começando tarde) conta como feito, menos o carregamento.
-        for s in &mut self.sequence {
-            if s.at > t_minus && s.action != SeqAction::PropellantLoad {
-                s.done = true;
-            }
-            if s.action == SeqAction::PropellantLoad && s.at > t_minus {
-                s.done = false;
-            }
-        }
         self.positions = POSITIONS
             .iter()
             .filter(|(id, _)| crewed || (*id != "crew" && *id != "surg"))
@@ -387,22 +386,8 @@ impl LaunchControl {
         let before = self.t_minus;
         self.t_minus -= dt;
         let now = self.t_minus;
-        // Critérios em violação no fim da contagem: espera automática ou aborto.
-        let violated = self.criteria.iter().find(|c| !c.ok).cloned();
-        if let Some(c) = &violated {
-            if now <= 600.0 && now > 31.0 {
-                self.t_minus = before;
-                self.hold(&format!("LCC: {} ({})", c.name, c.value));
-                out.events.push((Level::Warn, format!("Espera automática em T-{:.0} s: {} fora do limite ({})", before, c.name, c.value)));
-                return out;
-            }
-            if now <= 31.0 && now > 0.0 {
-                out.events.push((Level::Alarm, format!("Aborto da sequência automática em T-{:.0} s: {}", before, c.name)));
-                out.shutdown = true;
-                self.recycle(600.0);
-                return out;
-            }
-        }
+        // Primeiro a sequência (a contagem curta executa as ações que pulou),
+        // depois os critérios com o estado já atualizado.
         let mut items: Vec<usize> = (0..self.sequence.len()).filter(|&i| !self.sequence[i].done && self.sequence[i].at >= now).collect();
         items.sort_by(|&a, &b| self.sequence[b].at.total_cmp(&self.sequence[a].at));
         for i in items {
@@ -450,6 +435,23 @@ impl LaunchControl {
             }
             self.sequence[i].done = true;
             out.events.push((Level::Info, format!("T-{} — {}", fmt_t(item.at), item.name)));
+        }
+        self.evaluate(v, wx, has_link);
+        // Critérios em violação no fim da contagem: espera automática ou aborto.
+        let violated = self.criteria.iter().find(|c| !c.ok).cloned();
+        if let Some(c) = &violated {
+            if now <= 600.0 && now > 31.0 {
+                self.t_minus = before;
+                self.hold(&format!("LCC: {} ({})", c.name, c.value));
+                out.events.push((Level::Warn, format!("Espera automática em T-{:.0} s: {} fora do limite ({})", before, c.name, c.value)));
+                return out;
+            }
+            if now <= 31.0 && now > 0.0 {
+                out.events.push((Level::Alarm, format!("Aborto da sequência automática em T-{:.0} s: {}", before, c.name)));
+                out.shutdown = true;
+                self.recycle(600.0);
+                return out;
+            }
         }
         out
     }
@@ -534,6 +536,25 @@ mod tests {
             }
         }
         assert!(ignited && released);
+    }
+
+    #[test]
+    fn contagem_curta_arma_a_terminacao() {
+        let mut v = catalog::build("vsb30").unwrap();
+        v.id = 1;
+        let mut lc = LaunchControl::default();
+        lc.setup(&v, 10.0);
+        let wx = Weather { evolve: false, ..Weather::default() };
+        let mut rng = Rng::new(3);
+        lc.state = CountState::Counting;
+        let mut released = false;
+        for _ in 0..200 {
+            if lc.tick(&mut v, &wx, &mut rng, 0.1, true).release {
+                released = true;
+                break;
+            }
+        }
+        assert!(v.fts.armed && released, "{:?} {}", lc.state, lc.hold_reason);
     }
 
     #[test]

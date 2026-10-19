@@ -12,6 +12,39 @@ use crate::telemetry::{self, LimitState};
 use crate::vehicle::*;
 use serde::{Deserialize, Serialize};
 
+/// Falhas que o instrutor pode injetar: id, nome e o que o argumento escolhe.
+pub const FAULTS: &[(&str, &str, &str)] = &[
+    ("engine", "Falha de motor", "motor nº"),
+    ("leak", "Vazamento de propelente", ""),
+    ("battery_cell", "Célula da bateria perdida", ""),
+    ("solar_stuck", "Mecanismo do painel solar travado", ""),
+    ("solar_degrade", "Metade de uma asa solar perdida", ""),
+    ("wheel", "Roda de reação falhou", "eixo (1–3)"),
+    ("gyro", "Viés nos girômetros", ""),
+    ("star_tracker", "Rastreador de estrelas cego", ""),
+    ("comms", "Transmissor em pane", ""),
+    ("heater", "Aquecedor falhou", ""),
+    ("cabin_leak", "Vazamento na cabine", "módulo nº"),
+    ("scrubber", "Remoção de CO₂ degradada", ""),
+    ("chute", "Paraquedas não abre", "paraquedas nº"),
+    ("fuel_cell", "Célula a combustível degradada", ""),
+    ("range_fouled", "Barco na área de exclusão", ""),
+    ("ground_fault", "Falha de sistema de solo", ""),
+    ("storm", "Tempestade com raios", ""),
+];
+
+/// Veículo de verdade, acompanhado pela telemetria CCSDS que chega por UDP.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct External {
+    pub id: VehicleId,
+    pub name: String,
+    pub apid: u16,
+    pub tm: Vec<(String, f64)>,
+    /// Instante (simulação) do último pacote.
+    pub last: f64,
+    pub packets: u64,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Alarm {
     pub id: u64,
@@ -101,6 +134,8 @@ pub struct World {
     pub event_seq: u64,
     #[serde(default)]
     pub next_periodic: f64,
+    #[serde(default)]
+    pub externals: Vec<External>,
 }
 
 impl World {
@@ -129,7 +164,29 @@ impl World {
             last_slow: -1e9,
             event_seq: 0,
             next_periodic: 0.0,
+            externals: Vec::new(),
         }
+    }
+
+    /// Atualiza (ou cria) um veículo externo com um pacote de telemetria.
+    pub fn external_update(&mut self, apid: u16, points: Vec<(String, f64)>) -> VehicleId {
+        let t = self.t;
+        if let Some(e) = self.externals.iter_mut().find(|e| e.apid == apid) {
+            for (k, v) in points {
+                match e.tm.iter_mut().find(|(id, _)| *id == k) {
+                    Some(slot) => slot.1 = v,
+                    None => e.tm.push((k, v)),
+                }
+            }
+            e.last = t;
+            e.packets += 1;
+            return e.id;
+        }
+        let id = self.next_id;
+        self.next_id += 1;
+        self.externals.push(External { id, name: format!("Veículo externo (APID 0x{apid:03X})"), apid, tm: points, last: t, packets: 1 });
+        self.event(Some(id), Level::Good, format!("Telemetria CCSDS recebida: novo veículo externo, APID 0x{apid:03X}"));
+        id
     }
 
     pub fn add_vehicle(&mut self, mut v: Vehicle) -> VehicleId {
@@ -248,6 +305,12 @@ impl World {
                     }
                 }
             }
+        }
+        // Energia de solo até o veículo passar para a interna (T-5 min).
+        let internal = self.launch.internal_power;
+        let pad = self.launch.vehicle;
+        for v in &mut self.vehicles {
+            v.ground_power = v.phase == Phase::Prelaunch && !(Some(v.id) == pad && internal);
         }
         // Estado dos outros, para encontro e apontamento.
         let targets: Vec<TargetInfo> = self
@@ -374,8 +437,11 @@ impl World {
                 if d.id.starts_with("prop.") && d.id.ends_with(".prop") {
                     continue;
                 }
-                // Apontamento só conta em órbita, com o ADCS no controle.
-                if d.id.starts_with("adcs.") && !matches!(v.phase, Phase::Orbit | Phase::Escape) {
+                // Apontamento só conta em órbita, com o ADCS no controle, e não
+                // enquanto a nave gira de propósito para uma queima.
+                let slewing = v.guidance.nodes.iter().any(|n| !n.done && (n.executing || n.t - self.t < 900.0))
+                    || v.guidance.program != Program::None;
+                if d.id.starts_with("adcs.") && (!matches!(v.phase, Phase::Orbit | Phase::Escape) || slewing) {
                     continue;
                 }
                 let st = d.check(*val);
@@ -807,7 +873,7 @@ impl World {
                 };
                 let id = self.next_node;
                 self.next_node += 1;
-                veh!().guidance.nodes.push(Node { id, label: "Pulso de RCS".into(), t: t + 5.0, dv_rtn: dir * dv, dir: None, remaining: 0.0, executing: false, done: false, rcs: true });
+                veh!().guidance.nodes.push(Node { id, label: "Pulso de RCS".into(), t: t + 5.0, dv_rtn: dir * dv, dir: None, remaining: 0.0, executing: false, done: false, rcs: true, target_energy: None, ignite_at: None });
                 "pulso programado".into()
             }
             // ── Manobras ──
@@ -1030,7 +1096,19 @@ impl World {
         let id = self.next_node;
         self.next_node += 1;
         let v = self.vehicle_mut(vid)?;
-        v.guidance.nodes.push(Node { id, label, t, dv_rtn, dir: None, remaining: 0.0, executing: false, done: false, rcs: dv_rtn.norm() < 2.0 && v.systems.as_ref().is_some_and(|s| s.adcs.rcs_force > 0.0) });
+        v.guidance.nodes.push(Node {
+            id,
+            label,
+            t,
+            dv_rtn,
+            dir: None,
+            remaining: 0.0,
+            executing: false,
+            done: false,
+            rcs: dv_rtn.norm() < 2.0 && v.systems.as_ref().is_some_and(|s| s.adcs.rcs_force > 0.0),
+            target_energy: None,
+            ignite_at: None,
+        });
         v.guidance.nodes.sort_by(|a, b| a.t.total_cmp(&b.t));
         Some(id)
     }
@@ -1042,6 +1120,11 @@ impl World {
         for n in &plan.nodes {
             if let Some(id) = self.add_node(vid, n.label.clone(), t + n.t, n.dv_rtn) {
                 ids.push(id);
+                // Corte por energia e ignição escolhida passam junto.
+                if let Some(node) = self.vehicle_mut(vid).and_then(|v| v.guidance.nodes.iter_mut().find(|x| x.id == id)) {
+                    node.target_energy = n.target_energy;
+                    node.ignite_at = n.ignite_at.map(|x| x + t);
+                }
             }
         }
         if let Some(l) = plan.landing {

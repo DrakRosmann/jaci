@@ -17,3 +17,4 @@ pub mod planner;
 pub mod scenarios;
 pub mod telemetry;
 pub mod world;
+pub mod ccsds;

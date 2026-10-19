@@ -399,6 +399,13 @@ pub struct Node {
     /// Usa só o RCS (Δv pequeno).
     #[serde(default)]
     pub rcs: bool,
+    /// Corta quando a energia específica (J/kg) chegar a este valor, em vez de
+    /// contar o Δv: queimas longas de escape.
+    #[serde(default)]
+    pub target_energy: Option<f64>,
+    /// Instante de ignição escolhido pelo planejador (senão, centrado em `t`).
+    #[serde(default)]
+    pub ignite_at: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -650,7 +657,7 @@ pub struct Vehicle {
     pub released: bool,
     pub guidance: Guidance,
     pub attached_to: Option<VehicleId>,
-    #[serde(default)]
+    #[serde(skip)]
     pub derived: Derived,
     #[serde(default)]
     pub stats: Stats,
@@ -662,6 +669,9 @@ pub struct Vehicle {
     /// Pai dos detritos (para o nome).
     #[serde(default)]
     pub parent: Option<VehicleId>,
+    /// Alimentado de fora (umbilical ou anfitrião), definido pelo mundo.
+    #[serde(default)]
+    pub ground_power: bool,
 }
 
 // ───────────────────────── Massa, empuxo e capacidades ─────────────────────────
@@ -1130,6 +1140,7 @@ impl Vehicle {
             safe_mode: false,
             faults: vec![],
             parent: Some(self.id),
+            ground_power: false,
         }
     }
 
@@ -1613,7 +1624,9 @@ impl Vehicle {
         let d = self.derived.clone();
         let att = self.att;
         let g = d.accel_g.max(if self.phase.is_final() || self.phase == Phase::Prelaunch { 1.0 } else { 0.0 });
+        let external = self.ground_power || self.attached_to.is_some();
         let Some(sys) = &mut self.systems else { return };
+        sys.power.external = external;
         let sun_flux = crate::subsystems::SOLAR_CONSTANT * (crate::bodies::AU / d.sun_dist.max(1e9)).powi(2) * d.sunlit;
         let sun_body = att.inv_rotate(d.sun_dir);
         // Cargas que dependem de outros sistemas.

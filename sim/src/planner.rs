@@ -29,6 +29,8 @@ fn node(label: &str, t: f64, r: Vec3, v: Vec3, dv_inertial: Vec3) -> Node {
         executing: false,
         done: false,
         rcs: false,
+        target_energy: None,
+        ignite_at: None,
     }
 }
 
@@ -347,6 +349,8 @@ pub fn injection(v: &Vehicle, t_now: f64, to: Body, depart_in: f64, tof: f64) ->
     if v.central != Body::Earth {
         return None;
     }
+    let shift = if to == Body::Moon { 0.0 } else { best_departure(v, t_now, to, depart_in, tof) - depart_in };
+    let depart_in = depart_in + shift;
     let mu = v.central.mu();
     let t_dep = t_now + depart_in;
     let t_arr = t_dep + tof;
@@ -354,6 +358,15 @@ pub fn injection(v: &Vehicle, t_now: f64, to: Body, depart_in: f64, tof: f64) ->
     if el.e >= 1.0 {
         return None;
     }
+    // Estado na hora da partida propagado com J2: em dias de espera o plano da
+    // órbita de estacionamento gira dezenas de graus.
+    let mut vd = v.clone();
+    let (rd, vdv) = crate::vehicle::propagate_gravity(v.central, v.r, v.v, depart_in, 30.0);
+    vd.r = rd;
+    vd.v = vdv;
+    let v = &vd;
+    let base = depart_in;
+    let depart_in = 0.0;
     if to == Body::Moon {
         // Lambert direto: do ponto da órbita à Lua (mirando 2000 km à frente dela).
         let mut best: Option<(f64, f64, Vec3, Vec3, Vec3)> = None;
@@ -361,7 +374,7 @@ pub fn injection(v: &Vehicle, t_now: f64, to: Body, depart_in: f64, tof: f64) ->
         let mut dt = depart_in;
         while dt < depart_in + period {
             let (r1, v1) = state_at(v, dt);
-            let (rm, vm) = Body::Moon.state(t_now + dt + tof);
+            let (rm, vm) = Body::Moon.state(t_now + base + dt + tof);
             let aim = rm + vm.unit().cross(rm.cross(vm).unit()) * -2_000e3;
             if let Some((lv1, _)) = lambert(r1, aim, tof, mu, true) {
                 let dv = lv1 - v1;
@@ -372,7 +385,7 @@ pub fn injection(v: &Vehicle, t_now: f64, to: Body, depart_in: f64, tof: f64) ->
             dt += period / 90.0;
         }
         let (dvn, dt, r1, v1, dv) = best?;
-        return Some(plan(vec![node("Injeção translunar", dt, r1, v1, dv)], format!("Injeção translunar de {:.0} m/s; chegada em {:.1} dias", dvn, tof / 86_400.0)));
+        return Some(plan(vec![node("Injeção translunar", base + dt, r1, v1, dv)], format!("Injeção translunar de {:.0} m/s; chegada em {:.1} dias", dvn, tof / 86_400.0)));
     }
     // Planetas: v∞ pelo Lambert heliocêntrico.
     let (re_, ve_) = Body::Earth.helio_state(t_dep);
@@ -380,8 +393,66 @@ pub fn injection(v: &Vehicle, t_now: f64, to: Body, depart_in: f64, tof: f64) ->
     let (lv1, _) = lambert(re_, rp, tof, Body::Sun.mu(), true)?;
     let vinf = lv1 - ve_;
     let vinf_n = vinf.norm();
-    // Ponto de queima: o periastro da hipérbole de partida, no plano da órbita
-    // de estacionamento, com a assíntota alinhada ao v∞ projetado.
+    // Queima longa (minutos): simula a queima de verdade, prógrada, até a
+    // energia do v∞, e escolhe a ignição que deixa a assíntota mais perto da
+    // direção pedida.
+    let (f, mdot) = crate::guidance::burn_capacity(v);
+    if f > 0.0 {
+        let target_e = vinf_n * vinf_n / 2.0;
+        let prop: f64 = v.active_stages().iter().map(|&i| v.stages[i].propellant).sum();
+        let period = el.period(mu);
+        let try_at = |t_ign: f64| -> Option<(f64, f64)> {
+            let (r0, v0) = state_at(v, t_ign);
+            let (r1, v1, dur) = simulate_burn(v.central, r0, v0, v.mass(), f, mdot, prop, target_e)?;
+            let (_, vfar) = propagate_kepler(r1, v1, 20.0 * 86_400.0, mu);
+            Some((vfar.angle(vinf), dur))
+        };
+        let mut best: Option<(f64, f64, f64)> = None;
+        let n = 180;
+        for k in 0..n {
+            let tk = period * k as f64 / n as f64;
+            if let Some((ang, dur)) = try_at(tk) {
+                if best.is_none_or(|b| ang < b.1) {
+                    best = Some((tk, ang, dur));
+                }
+            }
+        }
+        if let Some((mut tb, mut ab, mut db)) = best {
+            // Refina em passos menores em volta.
+            let mut step = period / n as f64 / 2.0;
+            while step > 1.0 {
+                for cand in [tb - step, tb + step] {
+                    if let Some((ang, dur)) = try_at(cand.max(0.0)) {
+                        if ang < ab {
+                            tb = cand.max(0.0);
+                            ab = ang;
+                            db = dur;
+                        }
+                    }
+                }
+                step /= 2.0;
+            }
+            let (r1, v1) = state_at(v, tb);
+            let v_need = (vinf_n * vinf_n + 2.0 * mu / r1.norm()).sqrt();
+            let dv = v1.unit() * (v_need - v1.norm());
+            let mut nd = node(&format!("Injeção para {}", to.name()), base + tb + db / 2.0, r1, v1, dv);
+            nd.target_energy = Some(target_e);
+            nd.ignite_at = Some(base + tb);
+            let c3 = vinf_n * vinf_n / 1e6;
+            return Some(plan(
+                vec![nd],
+                format!(
+                    "C3 = {:.1} km²/s², queima de {:.0} s (assíntota a {:.1}° do v∞ pedido); chegada em {:.0} dias (corrigir com TCM no cruzeiro)",
+                    c3,
+                    db,
+                    ab.to_degrees(),
+                    tof / 86_400.0
+                ),
+            ));
+        }
+    }
+    // Sem propulsão para simular: ponto da queima impulsiva, o periastro da
+    // hipérbole de partida, com a assíntota alinhada ao v∞ projetado.
     let h = v.r.cross(v.v).unit();
     let s = vinf.reject(h).unit();
     let rp_n = v.r.norm();
@@ -407,7 +478,7 @@ pub fn injection(v: &Vehicle, t_now: f64, to: Body, depart_in: f64, tof: f64) ->
     let dv = v1.unit() * (v_need - v1.norm());
     let c3 = vinf_n * vinf_n / 1e6;
     Some(plan(
-        vec![node(&format!("Injeção para {}", to.name()), dt, r1, v1, dv)],
+        vec![node(&format!("Injeção para {}", to.name()), base + dt, r1, v1, dv)],
         format!("C3 = {:.1} km²/s², Δv {:.0} m/s; chegada em {:.0} dias (corrigir com TCM no cruzeiro)", c3, dv.norm(), tof / 86_400.0),
     ))
 }
@@ -424,9 +495,10 @@ pub fn tcm(v: &Vehicle, t_now: f64, to: Body, arrival: f64, pe_km: f64) -> Optio
         return None;
     }
     let (rt, vt) = to.state_relative_to(central, arrival);
-    // Mira deslocada do centro pelo parâmetro de impacto que dá o periastro pedido.
+    // Mira deslocada do centro pelo parâmetro de impacto que dá o periastro
+    // pedido, com o v∞ de chegada de um primeiro Lambert ao centro.
     let rp = to.radius() + pe_km * 1e3;
-    let v_rel = (vt - v1).norm().max(100.0);
+    let v_rel = lambert(r1, rt, tof, mu, true).map_or((vt - v1).norm(), |(_, v2)| (v2 - vt).norm()).max(100.0);
     let b = rp * (1.0 + 2.0 * to.mu() / (rp * v_rel * v_rel)).sqrt();
     let side = vt.cross(rt).cross(vt).unit();
     let aim = rt + side * b;
@@ -452,6 +524,70 @@ pub fn capture(v: &Vehicle, apo_km: f64) -> Option<Plan> {
     let a = (rn + ra.max(rn)) / 2.0;
     let dv = vel.unit() * (vis_viva(mu, rn, a) - vel.norm());
     Some(plan(vec![node(&format!("Inserção na órbita de {}", v.central.name()), dt, r, vel, dv)], format!("Captura com {:.0} m/s: órbita de {:.0} × {:.0} km", dv.norm(), (rn - re(v)) / 1e3, apo_km)))
+}
+
+/// Partida, até seis dias em volta da pedida, em que o v∞ para o planeta fica
+/// mais perto do plano da órbita de estacionamento (que gira com o J2), sem
+/// encarecer o C3 mais de 15 %. Assim a queima no plano acerta a assíntota.
+fn best_departure(v: &Vehicle, t_now: f64, to: Body, depart_in: f64, tof: f64) -> f64 {
+    let step = 3.0 * 3_600.0;
+    let lo = (depart_in - 6.0 * 86_400.0).max(3_600.0);
+    let hi = depart_in + 6.0 * 86_400.0;
+    let vinf_at = |td: f64| -> Option<Vec3> {
+        let (re_, ve_) = Body::Earth.helio_state(t_now + td);
+        let (rp, _) = to.helio_state(t_now + td + tof);
+        lambert(re_, rp, tof, Body::Sun.mu(), true).map(|(l, _)| l - ve_)
+    };
+    let Some(ref_v) = vinf_at(depart_in) else { return depart_in };
+    let c3_ref = ref_v.norm2();
+    // Estados da órbita de estacionamento, com J2, de 3 em 3 horas.
+    let (mut r, mut vel) = crate::vehicle::propagate_gravity(v.central, v.r, v.v, lo, 30.0);
+    let mut td = lo;
+    let mut best = (f64::INFINITY, depart_in);
+    while td <= hi {
+        if let Some(vi) = vinf_at(td) {
+            let h = r.cross(vel).unit();
+            let out = (vi.dot(h) / vi.norm()).asin().abs();
+            if vi.norm2() <= c3_ref * 1.15 && out < best.0 {
+                best = (out, td);
+            }
+        }
+        let (r2, v2) = crate::vehicle::propagate_gravity(v.central, r, vel, step, 30.0);
+        r = r2;
+        vel = v2;
+        td += step;
+    }
+    best.1
+}
+
+/// Simula uma queima prógrada de empuxo constante até a energia `target_e`
+/// (ou até acabar o propelente). Devolve o estado final e a duração.
+fn simulate_burn(body: Body, r0: Vec3, v0: Vec3, m0: f64, thrust: f64, mdot: f64, prop: f64, target_e: f64) -> Option<(Vec3, Vec3, f64)> {
+    let (mut r, mut v, mut m) = (r0, v0, m0);
+    let mu = body.mu();
+    let h = 2.0;
+    let mut t = 0.0;
+    let m_end = m0 - prop;
+    while m > m_end {
+        let e = v.norm2() / 2.0 - mu / r.norm();
+        if e >= target_e {
+            return Some((r, v, t));
+        }
+        let acc = |r: Vec3, v: Vec3| crate::vehicle::gravity(body, r) + v.unit() * (thrust / m);
+        let k1v = acc(r, v);
+        let k1r = v;
+        let k2v = acc(r + k1r * (h / 2.0), v + k1v * (h / 2.0));
+        let k2r = v + k1v * (h / 2.0);
+        let k3v = acc(r + k2r * (h / 2.0), v + k2v * (h / 2.0));
+        let k3r = v + k2v * (h / 2.0);
+        let k4v = acc(r + k3r * h, v + k3v * h);
+        let k4r = v + k3v * h;
+        r += (k1r + k2r * 2.0 + k3r * 2.0 + k4r) * (h / 6.0);
+        v += (k1v + k2v * 2.0 + k3v * 2.0 + k4v) * (h / 6.0);
+        m -= mdot * h;
+        t += h;
+    }
+    None
 }
 
 #[derive(Clone, Debug, Serialize)]

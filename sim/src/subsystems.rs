@@ -6,6 +6,14 @@ use serde::{Deserialize, Serialize};
 
 // ───────────────────────────── Energia ─────────────────────────────
 
+/// "Sem limite" que sobrevive ao JSON (infinito vira null).
+pub const UNLIMITED: f64 = 1e300;
+
+/// Lê null como NaN (o JSON não tem NaN).
+pub fn nan_default<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    Ok(Option::<f64>::deserialize(d)?.unwrap_or(f64::NAN))
+}
+
 /// Constante solar a 1 UA (W/m²).
 pub const SOLAR_CONSTANT: f64 = 1361.0;
 
@@ -77,6 +85,9 @@ pub struct Power {
     /// Sem energia: a bateria zerou e a geração não cobre a carga.
     #[serde(default)]
     pub brownout: bool,
+    /// Energia externa (umbilical na plataforma, ou a estação quando acoplado).
+    #[serde(default)]
+    pub external: bool,
 }
 
 impl Power {
@@ -115,6 +126,8 @@ impl Power {
     /// eclipse) e `sun_body` a direção do Sol no corpo.
     pub fn update(&mut self, dt: f64, sun: f64, sun_body: Vec3, extra_load_w: f64) {
         let mut gen_w = self.rtg_w;
+        let ext_w = if self.external { self.loads.iter().filter(|l| l.on).map(|l| l.watts).sum::<f64>() + self.heater_w + extra_load_w + 0.2 * self.capacity_wh() } else { 0.0 };
+        gen_w += ext_w;
         if let Some(sa) = &self.solar {
             let cos = if !sa.deployed {
                 // Recolhidos: só uma fração das células vê o Sol.
@@ -418,7 +431,7 @@ pub struct Adcs {
     #[serde(default)]
     pub desaturating: bool,
     // Saídas:
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nan_default")]
     pub error_deg: f64,
     #[serde(default)]
     pub torque_cmd: Vec3,
@@ -696,7 +709,7 @@ impl Eclss {
             let want = self.scrubber_rate * days * (self.ppco2() / 0.4).min(1.5);
             let removed = want.min(self.co2_kg).min(self.scrubber_capacity);
             self.co2_kg -= removed;
-            if self.scrubber_capacity.is_finite() {
+            if self.scrubber_capacity < UNLIMITED {
                 self.scrubber_capacity -= removed;
             }
         }
@@ -783,6 +796,7 @@ mod tests {
             battery_w: 0.0,
             sun_angle: 0.0,
             brownout: false,
+            external: false,
         };
         p.update(3600.0, 0.0, Vec3::X, 0.0);
         assert!((p.soc - 0.0).abs() < 1e-9);
@@ -808,7 +822,7 @@ mod tests {
             o2_gen_on: false,
             scrubber_rate: 4.0,
             scrubber_on: true,
-            scrubber_capacity: f64::INFINITY,
+            scrubber_capacity: UNLIMITED,
             auto_press: false,
             fans_on: true,
             heart_rate: 0.0,

@@ -134,7 +134,7 @@ pub fn dictionary() -> Vec<CmdDef> {
         def("stage", "Separar estágio", "Voo", "Larga o estágio de baixo (ou os boosters)", vec![], true, false, &all),
         def("ignite", "Ignição", "Voo", "Acende os motores do estágio ativo", vec![], false, false, &all),
         def("shutdown", "Corte dos motores", "Voo", "Desliga os motores líquidos acesos", vec![], false, false, &all),
-        def("throttle", "Aceleração", "Voo", "Aceleração dos motores líquidos", vec![n("value", "Aceleração", "%")], false, false, &all),
+        def("throttle", "Potência dos motores", "Voo", "Potência dos motores líquidos (%)", vec![n("value", "Potência", "%")], false, false, &all),
         def("engine_off", "Desligar um motor", "Voo", "Desliga um motor do estágio ativo", vec![n("engine", "Motor nº", "")], true, false, &all),
         def("jettison", "Descartar peça", "Voo", "Larga a coifa ou a torre de escape", vec![e("item", "Peça", vec![("fairing", "Coifa"), ("les", "Torre de escape")])], true, false, &all),
         def("payload_sep", "Separar a carga útil", "Voo", "Separa a nave dos estágios do lançador", vec![], true, false, &all),
