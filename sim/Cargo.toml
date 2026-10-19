@@ -1,0 +1,10 @@
+[package]
+name = "jaci-sim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Núcleo de simulação do Jaci: mecânica orbital, foguetes, naves e subsistemas"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
