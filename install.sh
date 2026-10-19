@@ -33,7 +33,7 @@ Exec=$prefix/bin/jaci --open
 Icon=$id
 Terminal=false
 Type=Application
-Categories=Education;Science;
+Categories=Education;Astronomy;
 Keywords=foguete;espaço;órbita;satélite;rocket;space;orbit;
 Actions=Parar;
 
