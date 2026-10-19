@@ -85,3 +85,14 @@ export function rate(bps: number | null | undefined): string {
   if (bps >= 1e3) return `${num(bps / 1e3, 1)} kbit/s`
   return `${num(bps, 0)} bit/s`
 }
+
+/** Hora do KSP no calendário de Kerbin (dias de 6 h, anos de 426 dias). */
+export function kerbinTime(ut: number | null | undefined): string {
+  if (ut == null || !isFinite(ut)) return '—'
+  const day = 6 * 3600
+  const year = 426 * day
+  const y = Math.floor(ut / year) + 1
+  const d = Math.floor((ut % year) / day) + 1
+  const s = ut % day
+  return `A${y} D${d} ${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(Math.floor(s % 60))}`
+}

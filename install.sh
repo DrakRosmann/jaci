@@ -35,7 +35,12 @@ Terminal=false
 Type=Application
 Categories=Education;Astronomy;
 Keywords=foguete;espaço;órbita;satélite;rocket;space;orbit;
-Actions=Parar;
+Actions=KSP;Parar;
+
+[Desktop Action KSP]
+Name=Jaci com o KSP
+Name[en]=Jaci with KSP
+Exec=$prefix/bin/jaci --open --ksp
 
 [Desktop Action Parar]
 Name=Parar o Jaci

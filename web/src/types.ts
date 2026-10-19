@@ -228,6 +228,42 @@ export interface Vehicle {
   systems?: Systems
   packets?: number
   age?: number
+  central_name?: string
+  central_radius?: number
+  central_rotation?: number
+  ksp?: KspVessel
+}
+
+/** Nave do Kerbal Space Program, vista pelo kOS (server/src/ksp.rs). */
+export interface KspVessel {
+  uid: string
+  situation: string
+  mode: 'manual' | 'ascent' | 'coast' | 'node' | string
+  steer: string
+  target: string
+  sas: boolean
+  rcs: boolean
+  gear: boolean
+  lights: boolean
+  brakes: boolean
+  stage: number | null
+  warp: number | null
+  age: number | null
+  packets: number
+  ut: number
+  body: { name: string; radius: number; mu: number; atm: number; rotation: number }
+  resources: { name: string; amount: number | null; capacity: number | null }[]
+  countdown: { t_minus: number; apo: number; heading: number } | null
+}
+
+export interface KspStatus {
+  dir: string
+  scripts: string
+  kos: boolean
+  module_manager: boolean
+  patch: boolean
+  vessels: number
+  live: number
 }
 
 export interface SeqItem {
@@ -307,6 +343,7 @@ export interface Snapshot {
   bodies: { id: string; r: [number, number, number]; rel: [number, number, number] }[]
   sun: [number, number, number]
   stations_live: { id: string; enabled: boolean }[]
+  ksp: KspStatus | null
 }
 
 export interface PlanNode {

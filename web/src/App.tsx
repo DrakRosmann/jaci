@@ -16,6 +16,7 @@ import { Stations } from './views/Stations'
 import { Interplanetary } from './views/Interplanetary'
 import { Procedures } from './views/Procedures'
 import { Instructor } from './views/Instructor'
+import { KspView } from './views/Ksp'
 
 const CONSOLES: { id: View; code: string; name: string }[] = [
   { id: 'overview', code: 'FLIGHT', name: 'Visão geral' },
@@ -30,6 +31,7 @@ const CONSOLES: { id: View; code: string; name: string }[] = [
   { id: 'interplanetary', code: 'NAV', name: 'Interplanetário' },
   { id: 'procedures', code: 'PROC', name: 'Procedimentos' },
   { id: 'instructor', code: 'SIM', name: 'Instrutor' },
+  { id: 'ksp', code: 'KSP', name: 'Kerbal Space Program' },
 ]
 
 export default function App() {
@@ -96,5 +98,7 @@ function Current({ view }: { view: View }) {
       return <Procedures />
     case 'instructor':
       return <Instructor />
+    case 'ksp':
+      return <KspView />
   }
 }

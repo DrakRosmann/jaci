@@ -26,6 +26,23 @@ const BODY_COLOR: Record<string, number> = {
   uranus: 0x7fd4d9,
   neptune: 0x3b6fd9,
   sun: 0xffcc33,
+  // KSP
+  kerbin: 0x2f6db5,
+  mun: 0x8c8c8c,
+  minmus: 0x9fd9c8,
+  eve: 0x7b3fa0,
+  gilly: 0x8a6a55,
+  duna: 0xb0502d,
+  ike: 0x6e6e6e,
+  dres: 0x7a7468,
+  jool: 0x5f9e3a,
+  laythe: 0x2a5a8a,
+  vall: 0x9fb8c8,
+  tylo: 0xb8b0a0,
+  bop: 0x6a5a48,
+  pol: 0xc8b878,
+  eeloo: 0xd8d8d0,
+  moho: 0x6a4a3a,
 }
 
 let land: [number, number][][] | null = null
@@ -121,8 +138,8 @@ export function Orbit3D({ vehicle, prediction, others = [], height = 420 }: Prop
   useEffect(() => {
     const th = three.current
     if (!th || !hello) return
-    const info = hello.bodies.find((b) => b.id === central)
-    const radius = info?.radius ?? 6.378e6
+    // Naves do KSP trazem o raio do corpo (o "sun" do jogo não é o Sol de verdade).
+    const radius = v?.central_radius ?? hello.bodies.find((b) => b.id === central)?.radius ?? 6.378e6
     if (th.central === central && th.radius === radius && th.body.children.length > 1) return
     th.body.clear()
     th.central = central
@@ -148,7 +165,8 @@ export function Orbit3D({ vehicle, prediction, others = [], height = 420 }: Prop
     }
     th.body.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(eq), new THREE.LineBasicMaterial({ color: 0x35507a })))
     th.body.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, -1.4, 0), new THREE.Vector3(0, 1.4, 0)]), new THREE.LineBasicMaterial({ color: 0x35507a })))
-  }, [central, hello, landReady])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [central, hello, landReady, v?.central_radius])
 
   // Rotação do corpo, Sol, trajetórias e veículos.
   useEffect(() => {

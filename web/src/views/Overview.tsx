@@ -11,7 +11,7 @@ import type { Vehicle } from '../types'
 export function trackSpan(v: Vehicle | undefined): number {
   if (!v) return 6000
   const period = (v.tm?.['orb.period'] ?? 0) * 60
-  if (v.central !== 'earth') return 86_400 * 3
+  if (v.central !== 'earth' && v.kind !== 'ksp') return 86_400 * 3
   if (period > 0 && isFinite(period) && (v.pe ?? -1) > 0) return Math.min(period * 1.5, 86_400 * 2)
   return 3000
 }
@@ -20,7 +20,9 @@ export function Overview() {
   const v = useStore((s) => s.selected)
   const snap = useStore((s) => s.snap)!
   const span = trackSpan(v)
-  const pred = usePrediction(v && v.central === 'earth' && v.phase !== 'prelaunch' ? v.id : null, span, 5000)
+  // Nave do KSP: o mapa é o do corpo em que ela está.
+  const body = v?.kind === 'ksp' ? v.central : 'earth'
+  const pred = usePrediction(v && v.central === body && !['prelaunch', 'landed'].includes(v.phase) ? v.id : null, span, 5000)
   const tracks = useMemo<Track[]>(
     () => (v && pred.points.length ? [{ vehicle: v.id, points: pred.points.map((p) => [p[2], p[1]] as [number, number]), color: '#4cc3ff' }] : []),
     [pred, v?.id],
@@ -32,7 +34,7 @@ export function Overview() {
       {v?.safe_mode && <div className="banner warn">{t('Modo de segurança ativo')}: {v.name}</div>}
       <div className="grid cols-3">
         <Panel title={t('Mapa')} className="span-2" flush>
-          <MapView tracks={tracks} height={460} />
+          <MapView tracks={tracks} height={460} body={body} />
         </Panel>
         <Panel title={v ? `${v.name} · ${tx(v.kind_name)}` : t('Veículo')}>{v && <Summary v={v} />}</Panel>
       </div>
@@ -61,7 +63,7 @@ export function Overview() {
                     <span className="dot" style={{ background: kindColor(x.kind) }} /> {x.name}
                   </td>
                   <td>{tx(x.phase_name)}</td>
-                  <td>{x.central}</td>
+                  <td>{x.central_name ?? x.central}</td>
                   <td className="num">{distance(x.alt)}</td>
                   <td className="num">{num(x.speed, 0)} m/s</td>
                   <td className="num">{x.pe != null && x.ap != null && x.phase !== 'prelaunch' ? `${num(x.pe, 0)} × ${num(x.ap, 0)}` : '—'}</td>
@@ -81,7 +83,7 @@ export function Overview() {
 function Summary({ v }: { v: Vehicle }) {
   const snap = useStore((s) => s.snap)!
   const link = v.systems?.comms.link
-  const inAir = v.central === 'earth' && v.alt < 150
+  const inAir = (v.central === 'earth' && v.alt < 150) || (v.kind === 'ksp' && v.phase === 'ascent')
   const orbiting = ['orbit', 'escape', 'docked'].includes(v.phase)
   const next = v.nodes?.find((n) => !n.done)
   return (
@@ -95,7 +97,7 @@ function Summary({ v }: { v: Vehicle }) {
       </div>
       <div className="tiles">
         <Tile label={t('Tempo de missão')} value={met(v.met ?? null)} />
-        <Tile label={t('Posição')} value={v.central === 'earth' ? latlon(v.lat, v.lon) : v.central} />
+        <Tile label={t('Posição')} value={v.central === 'earth' || v.kind === 'ksp' ? latlon(v.lat, v.lon) : v.central} title={v.central_name} />
         <Tile label={t('Altitude')} value={distance(v.alt)} />
         <Tile label={t('Velocidade')} value={num(v.speed, 0)} unit="m/s" />
         {v.tm && (inAir || v.phase === 'ascent' || v.phase === 'entry' || v.phase === 'descent') && (
@@ -114,7 +116,7 @@ function Summary({ v }: { v: Vehicle }) {
             <Tm v={v} id="orb.period" label={t('Período')} digits={1} />
           </>
         )}
-        {v.tm && <Tm v={v} id="nav.dv" label={t('Δv restante')} digits={0} />}
+        {v.tm?.['nav.dv'] != null && <Tm v={v} id="nav.dv" label={t('Δv restante')} digits={0} />}
         {v.tm?.['eps.soc'] != null && <Tm v={v} id="eps.soc" label={t('Bateria')} digits={0} />}
         {v.systems && <Tile label={t('Enlace')} value={link ? rate(link.rate_bps) : t('sem enlace')} state={link ? 'nominal' : v.phase === 'prelaunch' ? 'none' : 'yellow'} title={link?.station} />}
         {link && link.owlt > 1 && <Tile label={t('Atraso da luz')} value={duration(link.owlt)} />}

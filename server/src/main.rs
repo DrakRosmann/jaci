@@ -2,6 +2,7 @@
 //! com a interface, serve os arquivos dela e, se pedido, troca pacotes CCSDS
 //! por UDP com computadores de bordo de verdade.
 
+mod ksp;
 mod snapshot;
 
 use anyhow::Context;
@@ -46,9 +47,12 @@ struct Args {
     /// sem ela, o servidor gera uma e mostra no log.
     #[arg(long, env = "JACI_TOKEN")]
     token: Option<String>,
-    /// Cenário inicial (veja --list).
-    #[arg(long, default_value = "sondagem")]
-    scenario: String,
+    /// Cenário inicial (veja --list); padrão: sondagem, ou ksp com --ksp.
+    #[arg(long)]
+    scenario: Option<String>,
+    /// Liga ao Kerbal Space Program pelo kOS. Sem a pasta, procura a do Steam.
+    #[arg(long, num_args = 0..=1, value_name = "PASTA_DO_KSP", env = "JACI_KSP")]
+    ksp: Option<Option<PathBuf>>,
     /// Lista os cenários e sai.
     #[arg(long)]
     list: bool,
@@ -92,6 +96,8 @@ pub struct App {
     /// Telemetria recente de cada veículo (uma amostra por segundo de relógio),
     /// para quem conecta no meio da missão ver os gráficos desde antes.
     pub history: HashMap<u32, snapshot::Hist>,
+    /// Ligação com o KSP (kOS), se ativa.
+    pub ksp: Option<ksp::KspLink>,
 }
 
 type Shared = Arc<Mutex<App>>;
@@ -174,7 +180,12 @@ async fn main() -> anyhow::Result<()> {
         Some(s) => parse_utc(s).context("data de início inválida (use AAAA-MM-DD HH:MM:SS)")?,
         None => now_j2000(),
     };
-    let world = scenarios::build(&args.scenario, t0, args.seed).with_context(|| format!("cenário desconhecido: {}", args.scenario))?;
+    let scenario = args.scenario.clone().unwrap_or_else(|| if args.ksp.is_some() { "ksp" } else { "sondagem" }.into());
+    let world = scenarios::build(&scenario, t0, args.seed).with_context(|| format!("cenário desconhecido: {scenario}"))?;
+    let ksp_link = match &args.ksp {
+        Some(dir) => Some(connect_ksp(dir.clone())?),
+        None => None,
+    };
     tracing::info!("cenário {} em {}", world.mission, format_utc(world.t));
     let app = Arc::new(Mutex::new(App {
         world,
@@ -185,6 +196,7 @@ async fn main() -> anyhow::Result<()> {
         tc_seq: 0,
         tc_socket: None,
         history: HashMap::new(),
+        ksp: ksp_link,
     }));
     {
         let mut a = app.lock().unwrap();
@@ -230,6 +242,22 @@ async fn main() -> anyhow::Result<()> {
                 if now - last_hist >= Duration::from_millis(500) {
                     last_hist = now;
                     snapshot::record_history(&mut a);
+                }
+            }
+        });
+    }
+
+    // Arquivos do kOS: lidos quatro vezes por segundo.
+    {
+        let app = app.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(Duration::from_millis(250));
+            loop {
+                tick.tick().await;
+                let mut a = app.lock().unwrap();
+                let App { ksp, world, .. } = &mut *a;
+                if let Some(link) = ksp {
+                    link.poll(world);
                 }
             }
         });
@@ -375,6 +403,18 @@ async fn client(socket: WebSocket, ctx: Ctx) {
     writer.abort();
 }
 
+/// Liga ao KSP: acha a pasta, instala os scripts do kOS.
+fn connect_ksp(dir: Option<PathBuf>) -> anyhow::Result<ksp::KspLink> {
+    let dir = dir.or_else(ksp::find_ksp).context("não achei o Kerbal Space Program; passe a pasta: --ksp <pasta>")?;
+    anyhow::ensure!(dir.join("GameData").is_dir(), "{} não parece ser a pasta do KSP (falta GameData)", dir.display());
+    let link = ksp::KspLink::new(dir.clone()).with_context(|| format!("não instalei os scripts em {}", dir.display()))?;
+    tracing::info!("KSP em {}: scripts em {}", dir.display(), link.dir.display());
+    if !link.kos_installed {
+        tracing::warn!("o kOS não está em GameData: instale pelo CKAN (ckan install kOS)");
+    }
+    Ok(link)
+}
+
 fn vid(v: &Value) -> u32 {
     v.get("vehicle").and_then(|x| x.as_u64().or_else(|| x.as_str().and_then(|s| s.parse().ok()))).unwrap_or(0) as u32
 }
@@ -390,6 +430,14 @@ fn handle(ctx: &Ctx, msg: &Value) -> Option<Value> {
             let cmd: Command = serde_json::from_value(msg.get("cmd")?.clone()).ok()?;
             let armed = msg.get("armed").and_then(|x| x.as_bool()).unwrap_or(false);
             let at = msg.get("at").and_then(|x| x.as_str()).and_then(parse_utc).or_else(|| msg.get("in").and_then(|x| x.as_f64()).map(|d| a.world.t + d));
+            // Nave do KSP: o comando vai para o kOS.
+            let App { ksp, world, .. } = &mut *a;
+            if let Some(link) = ksp.as_mut().filter(|l| l.vessel(id).is_some()) {
+                return Some(match link.command(world, id, &cmd, armed) {
+                    Ok(n) => json!({"type": "command_result", "req": req, "ok": true, "id": n}),
+                    Err(e) => json!({"type": "command_result", "req": req, "ok": false, "error": e}),
+                });
+            }
             // Veículo externo: o comando vai por CCSDS.
             if let Some(dest) = a.tc_routes.get(&id).copied() {
                 a.tc_seq = a.tc_seq.wrapping_add(1);
@@ -412,6 +460,9 @@ fn handle(ctx: &Ctx, msg: &Value) -> Option<Value> {
         "sim" => sim(&mut a, msg, &req),
         "plan" => {
             let id = vid(msg);
+            if a.ksp.as_ref().is_some_and(|l| l.vessel(id).is_some()) {
+                return Some(json!({"type": "plan", "req": req, "vehicle": id, "ok": false, "error": "nave do KSP: use os comandos de manobra do KSP"}));
+            }
             let v = a.world.vehicle(id)?.clone();
             let p = msg.get("params").cloned().unwrap_or(json!({}));
             let num = |k: &str, d: f64| p.get(k).and_then(|x| x.as_f64().or_else(|| x.as_str().and_then(|s| s.replace(',', ".").parse().ok()))).unwrap_or(d);
@@ -457,6 +508,10 @@ fn handle(ctx: &Ctx, msg: &Value) -> Option<Value> {
             let id = vid(msg);
             let span = msg.get("span").and_then(|x| x.as_f64()).unwrap_or(6_000.0).clamp(60.0, 3.0e8);
             let step = msg.get("step").and_then(|x| x.as_f64()).unwrap_or((span / 400.0).max(10.0));
+            if let Some(link) = a.ksp.as_ref().filter(|l| l.vessel(id).is_some()) {
+                let central = link.vessel(id).map(|v| v.body.name.to_lowercase());
+                return Some(json!({"type": "predict", "req": req, "vehicle": id, "central": central, "points": link.predict(id, a.world.t, span, step)}));
+            }
             let pts: Vec<Value> = a.world.predict(id, span, step).into_iter().map(|(t, la, lo, al, r)| json!([t, la, lo, al / 1e3, r.x, r.y, r.z])).collect();
             let central = a.world.vehicle(id).map(|v| v.central.id());
             json!({"type": "predict", "req": req, "vehicle": id, "central": central, "points": pts})
@@ -477,7 +532,11 @@ fn handle(ctx: &Ctx, msg: &Value) -> Option<Value> {
             let pc = planner::porkchop(from, to, start, g("span_days", 400.0), g("tof_min", 100.0), g("tof_max", 400.0), g("n", 40.0) as usize);
             return Some(json!({"type": "porkchop", "req": req, "data": pc}));
         }
-        "dictionary" => snapshot::dictionary(&a),
+        "dictionary" => {
+            let mut d = snapshot::dictionary(&a);
+            d["req"] = req;
+            d
+        }
         _ => return None,
     };
     Some(out)
@@ -607,6 +666,24 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
             }
             ok("ok")
         }
+        "ksp_connect" => {
+            let dir = msg.get("value").and_then(|x| x.as_str()).filter(|s| !s.trim().is_empty()).map(|s| PathBuf::from(s.trim()));
+            match connect_ksp(dir) {
+                Ok(link) => {
+                    let m = format!("KSP ligado: scripts em {}", link.dir.display());
+                    a.world.event(None, jaci_sim::vehicle::Level::Good, &m);
+                    a.ksp = Some(link);
+                    a.dict_sig.clear();
+                    json!({"type": "sim_result", "req": req, "ok": true, "message": m})
+                }
+                Err(e) => json!({"type": "sim_result", "req": req, "ok": false, "error": format!("{e:#}")}),
+            }
+        }
+        "ksp_patch" => match a.ksp.as_mut().map(|l| l.install_patch()) {
+            Some(Ok(())) => ok("patch instalado: reinicie o KSP para pôr o kOS nas peças de comando"),
+            Some(Err(e)) => json!({"type": "sim_result", "req": req, "ok": false, "error": e.to_string()}),
+            None => json!({"type": "sim_result", "req": req, "ok": false, "error": "KSP não ligado"}),
+        },
         "remove_debris" => {
             w.vehicles.retain(|v| !(v.kind == jaci_sim::vehicle::Kind::Debris && v.phase.is_final()));
             ok("detritos removidos")

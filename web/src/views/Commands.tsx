@@ -16,7 +16,10 @@ export function Commands() {
   const available = useMemo(
     () =>
       (hello?.commands ?? []).filter(
-        (c) => (!v || c.kinds.length === 0 || c.kinds.includes(v.kind)) && (launching || !['Lançamento', 'Segurança de voo'].includes(c.group)),
+        // Naves do KSP só aceitam os comandos do kOS.
+        (c) =>
+          (!v || (v.kind === 'ksp' ? c.kinds.includes('ksp') : c.kinds.length === 0 || c.kinds.includes(v.kind))) &&
+          (launching || !['Lançamento', 'Segurança de voo'].includes(c.group)),
       ),
     [hello, v, launching],
   )
@@ -52,7 +55,7 @@ export function Commands() {
           ))}
         </div>
       </Panel>
-      {def && <CommandForm key={def.id + v.id} def={def} vehicle={v.id} />}
+      {def && <CommandForm key={def.id + v.id} def={def} vehicle={v.id} game={v.kind === 'ksp'} />}
       <Panel title={t('Histórico')} flush>
         <div style={{ maxHeight: 600, overflowY: 'auto' }}>
           <table>
@@ -89,7 +92,7 @@ function statusName(s: string): string {
   return ({ queued: 'na fila', sent: 'a caminho', executed: 'executado', failed: 'falhou' } as Record<string, string>)[s] ?? s
 }
 
-function CommandForm({ def, vehicle }: { def: CmdDef; vehicle: number }) {
+function CommandForm({ def, vehicle, game }: { def: CmdDef; vehicle: number; game: boolean }) {
   const snap = useStore((s) => s.snap)!
   const [args, setArgs] = useState<Record<string, string>>({})
   const [when, setWhen] = useState<'now' | 'in' | 'at'>('now')
@@ -143,7 +146,7 @@ function CommandForm({ def, vehicle }: { def: CmdDef; vehicle: number }) {
             )}
           </Arg>
         ))}
-        {!def.ground && (
+        {!def.ground && !game && (
           <Arg label={t('Execução')}>
             <span className="row">
               <select value={when} onChange={(e) => setWhen(e.target.value as 'now')}>
@@ -163,7 +166,11 @@ function CommandForm({ def, vehicle }: { def: CmdDef; vehicle: number }) {
         </button>
         {def.hazardous && <span className="small warn">{t('Comando perigoso: dois passos (armar e confirmar em 5 s).')}</span>}
       </div>
-      {!def.ground && <div className="small muted" style={{ marginTop: 8 }}>{t('Comandos de bordo exigem enlace e chegam com o atraso da luz.')}</div>}
+      {!def.ground && (
+        <div className="small muted" style={{ marginTop: 8 }}>
+          {game ? t('Vai para o kOS pela pasta Ships/Script do KSP; exige conexão com o KSC no jogo.') : t('Comandos de bordo exigem enlace e chegam com o atraso da luz.')}
+        </div>
+      )}
     </Panel>
   )
 }

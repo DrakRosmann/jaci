@@ -29,6 +29,7 @@ pub const SCENARIOS: &[ScenarioInfo] = &[
     ScenarioInfo { id: "observacao", name: "Satélite de observação em operação", description: "Imageamento, gravador de bordo, passagens nas estações e modo de segurança" },
     ScenarioInfo { id: "marte", name: "Sonda a Marte", description: "Pilha em órbita de estacionamento na janela de 2026: porkchop, injeção, cruzeiro com correções e captura" },
     ScenarioInfo { id: "lua", name: "Sonda lunar", description: "Injeção translunar da órbita de estacionamento e inserção em órbita da Lua" },
+    ScenarioInfo { id: "ksp", name: "Kerbal Space Program (kOS)", description: "Sem veículos simulados: o Jaci acompanha e comanda as naves do KSP pelo kOS" },
 ];
 
 /// Coloca um veículo numa órbita.
@@ -219,6 +220,8 @@ pub fn build(id: &str, t: f64, seed: u64) -> Option<World> {
             }
             w.add_vehicle(v);
         }
+        // As naves vêm do jogo (server/src/ksp.rs).
+        "ksp" => {}
         _ => return None,
     }
     Some(w)
@@ -233,7 +236,7 @@ mod tests {
         let t = crate::time::from_calendar(2026, 10, 19, 12, 0, 0.0);
         for s in SCENARIOS {
             let w = build(s.id, t, 1).unwrap_or_else(|| panic!("{}", s.id));
-            assert!(!w.vehicles.is_empty());
+            assert!(!w.vehicles.is_empty() || s.id == "ksp");
         }
     }
 }

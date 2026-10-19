@@ -34,8 +34,60 @@ executam depois do atraso da luz; os de solo (`ground`) executam na hora. Respos
 | `predict` | `vehicle`, `span` (s), `step` (s) | `predict`: pontos `[t, lat, lon, alt_km, x, y, z]` |
 | `passes` | `vehicle`, `span` (s) | `passes`: estação, AOS, LOS, elevação máxima |
 | `porkchop` | `from`, `to`, `start` (UTC), `span_days`, `tof_min`, `tof_max`, `n` | `porkchop`: datas, durações, C3 e v∞ de chegada, melhor ponto |
-| `sim` | `action`: `warp` (`value`), `pause`, `resume`, `warp_stop`, `scenario` (`value`, `start`), `save` (`value`), `saves`, `load` (`value`), `weather` (`surface_wind`, `wind_from`, `jet_wind`, `lightning_km`, `ceiling_m`, `rain`, `evolve`), `fault` (`vehicle`, `fault`, `arg`), `clear_faults`, `ack` (`value`: id do alarme, ou todos), `station` (`id`, `enabled`), `remove_debris` | `sim_result`, `saves` ou `reload` |
+| `sim` | `action`: `warp` (`value`), `pause`, `resume`, `warp_stop`, `scenario` (`value`, `start`), `save` (`value`), `saves`, `load` (`value`), `weather` (`surface_wind`, `wind_from`, `jet_wind`, `lightning_km`, `ceiling_m`, `rain`, `evolve`), `fault` (`vehicle`, `fault`, `arg`), `clear_faults`, `ack` (`value`: id do alarme, ou todos), `station` (`id`, `enabled`), `remove_debris`, `ksp_connect` (`value`: pasta do KSP, ou vazio para procurar), `ksp_patch` | `sim_result`, `saves` ou `reload` |
 | `dictionary` | — | `dictionary` |
+
+Naves do KSP vêm no instantâneo como veículos `"kind": "ksp"`, com `central` (o nome do corpo em
+minúsculas), `central_radius` e um objeto `ksp` (situação, piloto automático, atitude, SAS, RCS,
+estágio, recursos, contagem, idade do último pacote). O instantâneo leva também `ksp` com o estado
+da ligação (pasta, kOS, Module Manager, patch, naves). Os comandos delas são os `ksp_*` do
+dicionário.
+
+## Ponte com o kOS (arquivos)
+
+O script `jaci.ks` roda no kOS e conversa com o servidor por dois arquivos de texto por nave em
+`<KSP>/Ships/Script/jaci/` (o volume `0:` do kOS), com `<id>` sendo o UID da peça do computador:
+
+`tm-<id>.txt`, escrito pelo kOS (o servidor lê as linhas novas; o kOS apaga e recomeça o arquivo a
+cada 3000 linhas):
+
+| Linha | Conteúdo |
+|---|---|
+| `H <id> <nome da nave>` | cabeçalho, no começo e em cada arquivo novo |
+| `B <corpo> <raio m> <μ m³/s²> <topo da atmosfera m> <período de rotação s>` | corpo central, também ao trocar de esfera de influência (espaços no nome viram `_`) |
+| `T <campos>` | telemetria, 5 por segundo |
+| `R <número> <True\|False> <mensagem>` | resposta a um comando |
+| `E <texto>` | evento (separação, ignição, corte…) |
+
+Campos da linha `T`, nessa ordem: número, UT (s), tempo de missão (s), situação (`PRELAUNCH`,
+`FLYING`, `SUB_ORBITAL`, `ORBITING`, `ESCAPING`, `LANDED`, `SPLASHED`, `DOCKED`), altitude (m),
+latitude, longitude, velocidade orbital, velocidade de superfície, velocidade vertical (m/s),
+apoastro, periastro (m), inclinação, excentricidade, período (s, -1 em hipérbole), nodo ascendente,
+argumento do periastro, anomalia verdadeira (°), semieixo maior (m), massa (t), empuxo, empuxo
+máximo (kN), potência (0 a 1), pressão dinâmica (kPa), estágio, e quantidade e capacidade de
+LiquidFuel, Oxidizer, MonoPropellant, ElectricCharge e SolidFuel, arfagem e rumo (°), SAS, RCS,
+trem, luzes, freios (`True`/`False`), tempo até o apoastro e até o periastro (s, -1 se não há),
+tempo até a manobra (-1 sem manobra) e Δv dela, alvo (`-` sem alvo) e distância (m), aceleração do
+tempo, tripulantes, modo do piloto automático (`manual`, `ascent`, `coast`, `node`) e modo de
+atitude.
+
+`cmd-<id>.txt`, reescrito inteiro pelo servidor (troca atômica) a cada comando: a primeira linha é
+`S <sessão>` e as outras `<número> <comando> <argumentos>`, com os números crescendo. O kOS executa
+os de número maior que o último que viu; sessão nova (o servidor reiniciou) zera a contagem, e ao
+iniciar o script marca como vistos os que já estavam lá.
+
+| Comando | Argumentos |
+|---|---|
+| `stage`, `abort`, `stop`, `gear`, `lights`, `brakes`, `chutes`, `exec`, `delnodes` | — |
+| `throttle` | potência de 0 a 1 |
+| `sas`, `rcs`, `panels` | `on` ou `off` |
+| `steer` | `prograde`, `retrograde`, `normal`, `antinormal`, `radial_out`, `radial_in`, `up`, `heading` (rumo e arfagem a seguir), `hold`, `sun`, `target` ou `free` |
+| `ag` | grupo de ação, 1 a 10 |
+| `warp` | nível, 0 a 7 |
+| `node` | daqui a (s), radial, normal, prógrado (m/s) |
+| `circ` | `ap` ou `pe` |
+| `launch` | apoastro alvo (km), rumo (°) |
+| `target` | nome (espaços como `_`) |
 
 ## Enlace CCSDS (UDP)
 

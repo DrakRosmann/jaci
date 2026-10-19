@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Orbit3D } from '../components/Orbit3D'
+import { KspAttitude, KspManeuvers } from './Ksp'
 import { CmdButton, Empty, Panel, Tm, sendCommand, toast } from '../components/ui'
 import { t, tx } from '../lib/i18n'
 import { duration, latlon, num } from '../lib/format'
@@ -15,7 +16,7 @@ export function OrbitView() {
   return (
     <div className="grid">
       <div className="grid cols-3">
-        <Panel title={`${t('Órbita')} · ${v.name} · ${v.central}`} className="span-2" flush>
+        <Panel title={`${t('Órbita')} · ${v.name} · ${v.central_name ?? v.central}`} className="span-2" flush>
           <Orbit3D vehicle={v.id} prediction={pred.points} height={440} />
         </Panel>
         <Panel title={t('Elementos orbitais')}>
@@ -33,14 +34,21 @@ export function OrbitView() {
             <Tm v={v} id="nav.dv" digits={0} />
             <Tm v={v} id="nav.mass" digits={3} />
           </div>
-          <AttitudeButtons v={v} />
+          {v.kind !== 'ksp' && <AttitudeButtons v={v} />}
         </Panel>
       </div>
-      <div className="grid cols-3">
-        <Planner v={v} />
-        <NodeQueue v={v} />
-        <ManualBurn v={v} />
-      </div>
+      {v.kind === 'ksp' ? (
+        <div className="grid cols-3">
+          <KspManeuvers v={v} />
+          <KspAttitude v={v} />
+        </div>
+      ) : (
+        <div className="grid cols-3">
+          <Planner v={v} />
+          <NodeQueue v={v} />
+          <ManualBurn v={v} />
+        </div>
+      )}
     </div>
   )
 }

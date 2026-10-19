@@ -1,5 +1,5 @@
 import { t, tx } from '../lib/i18n'
-import { met } from '../lib/format'
+import { kerbinTime, met } from '../lib/format'
 import { store, useStore } from '../lib/store'
 
 const WARPS = [1, 10, 100, 1_000, 10_000, 100_000]
@@ -30,6 +30,12 @@ export function TopBar() {
         <span>UTC</span>
         <b>{snap?.utc.replace(' UTC', '') ?? '—'}</b>
       </div>
+      {sel?.ksp && (
+        <div className="clock">
+          <span>KSP</span>
+          <b>{kerbinTime(sel.ksp.ut)}</b>
+        </div>
+      )}
       <div className="clock">
         <span>{t('Tempo de missão')}</span>
         <b>{met(sel?.met ?? null)}</b>

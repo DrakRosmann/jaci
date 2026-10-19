@@ -6,7 +6,7 @@
 // JACI_BIN aponta outro binário; ONLY=texto roda só os cenários com o texto no nome.
 
 import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, appendFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -15,10 +15,10 @@ const ONLY = process.env.ONLY
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 let port = 28800
 
-async function server(scenario) {
+async function server(scenario, extra = []) {
   const p = port++
   const states = mkdtempSync(join(tmpdir(), 'jaci-teste-'))
-  const proc = spawn(BIN, ['--addr', `127.0.0.1:${p}`, '--scenario', scenario, '--start', '2026-10-19 15:00:00', '--states-dir', states, '--web-dir', '/nao-existe'], { stdio: ['ignore', 'ignore', 'pipe'] })
+  const proc = spawn(BIN, ['--addr', `127.0.0.1:${p}`, '--scenario', scenario, '--start', '2026-10-19 15:00:00', '--states-dir', states, '--web-dir', '/nao-existe', ...extra], { stdio: ['ignore', 'ignore', 'pipe'] })
   let log = ''
   proc.stderr.on('data', (d) => (log += d))
   for (let i = 0; i < 50; i++) {
@@ -77,7 +77,79 @@ function assert(cond, msg) {
   if (!cond) throw new Error(msg)
 }
 
+/** Um kOS de mentira: escreve a telemetria como o jaci.ks e responde aos comandos. */
+function fakeKos(dir, uid) {
+  const tm = join(dir, `tm-${uid}.txt`)
+  const cmd = join(dir, `cmd-${uid}.txt`)
+  writeFileSync(tm, `H ${uid} Kerbal X\nB Kerbin 600000 3531600000000 70000 21549.425\nE Ponte do Jaci ativa no kOS\n`)
+  const state = { seq: 0, ut: 1000, last: -1, received: [], status: 'PRELAUNCH', stage: 3 }
+  const tick = () => {
+    if (existsSync(cmd)) {
+      for (const line of readFileSync(cmd, 'utf8').split('\n')) {
+        const p = line.trim().split(' ')
+        if (p.length < 2 || p[0] === 'S') continue
+        const n = Number(p[0])
+        if (n <= state.last) continue
+        state.last = n
+        state.received.push(p.slice(1).join(' '))
+        if (p[1] === 'stage') state.stage--
+        if (p[1] === 'launch') state.status = 'FLYING'
+        appendFileSync(tm, `R ${n} True ${p[1]}\n`)
+      }
+    }
+    state.ut += 0.25
+    const f = [state.seq++, state.ut, 5, state.status, 120, -0.0972, -74.5577, 175, 0, 0, 80000, -590000, 0.1, 0.99, 1200, 10, 20, 180, 645000,
+      30.5, 0, 650, 0, 0, state.stage, 400, 800, 488, 976, 30, 30, 150, 200, 0, 0, 90, 90, 'True', 'False', 'True', 'False', 'True', 30, 600, -1, 0, '-', -1, 0, 3, 'manual', 'free']
+    appendFileSync(tm, `T ${f.join(' ')}\n`)
+  }
+  const h = setInterval(tick, 250)
+  return { state, stop: () => clearInterval(h) }
+}
+
 const cases = [
+  [
+    'ksp: ponte do kOS, telemetria, comandos e contagem',
+    async () => {
+      const ksp = mkdtempSync(join(tmpdir(), 'jaci-ksp-'))
+      mkdirSync(join(ksp, 'GameData', 'kOS'), { recursive: true })
+      const s = await server('ksp', ['--ksp', ksp])
+      const kos = fakeKos(join(ksp, 'Ships', 'Script', 'jaci'), '4242')
+      try {
+        assert(existsSync(join(ksp, 'Ships', 'Script', 'jaci', 'jaci.ks')), 'jaci.ks não foi instalado')
+        assert(existsSync(join(ksp, 'Ships', 'Script', 'boot', 'jaci.ks')), 'boot/jaci.ks não foi instalado')
+        const c = s.ws
+        const snap = await until(c, 'nave do KSP', (x) => x.vehicles.some((v) => v.kind === 'ksp' && v.tm['nav.alt'] != null))
+        assert(snap.ksp && snap.ksp.kos, 'estado da ligação com o KSP')
+        const v = snap.vehicles.find((v) => v.kind === 'ksp')
+        assert(v.name === 'Kerbal X' && v.central === 'kerbin' && v.phase === 'prelaunch', `nave: ${v.name} ${v.central} ${v.phase}`)
+        assert(Math.abs(v.tm['res.lf'] - 50) < 1e-6 && v.ksp.sas && v.ksp.gear, 'telemetria')
+        const d = await c.request({ type: 'dictionary' })
+        assert(d.dictionary[v.id].some((x) => x.id === 'orb.ap'), 'dicionário da nave')
+        assert(c.hello.commands.some((x) => x.id === 'ksp_stage'), 'comandos do KSP no dicionário')
+        const r0 = await c.request({ type: 'command', vehicle: v.id, cmd: { id: 'ksp_stage' } })
+        assert(!r0.ok, 'separação passou sem armar')
+        const r1 = await c.request({ type: 'command', vehicle: v.id, cmd: { id: 'ksp_stage' }, armed: true })
+        assert(r1.ok, `separação: ${r1.error}`)
+        await until(c, 'resposta do kOS', (x) => x.commands.some((k) => k.id === r1.id && k.status === 'executed'), 10000)
+        await until(c, 'estágio na telemetria', (x) => x.vehicles.find((k) => k.id === v.id).ksp.stage === 2, 10000)
+        const r2 = await c.request({ type: 'command', vehicle: v.id, cmd: { id: 'ksp_steer', args: { mode: 'heading', heading: 90, pitch: 80 } } })
+        assert(r2.ok, `atitude: ${r2.error}`)
+        const r3 = await c.request({ type: 'command', vehicle: v.id, cmd: { id: 'ksp_count', args: { t_minus: 2, apo: 90, heading: 90 } }, armed: true })
+        assert(r3.ok, `contagem: ${r3.error}`)
+        await until(c, 'lançamento no T-0', (x) => x.vehicles.find((k) => k.id === v.id).phase === 'ascent', 15000)
+        assert(kos.state.received.includes('steer heading 90 80'), `comandos recebidos: ${kos.state.received}`)
+        assert(kos.state.received.includes('launch 90 90'), `comandos recebidos: ${kos.state.received}`)
+        const pr = await c.request({ type: 'predict', vehicle: v.id, span: 600 })
+        assert(pr.central === 'kerbin', 'previsão: corpo')
+        const sim = await c.request({ type: 'command', vehicle: v.id, cmd: { id: 'att_mode', args: { mode: 'sun' } } })
+        assert(!sim.ok, 'comando da simulação aceito numa nave do KSP')
+      } finally {
+        kos.stop()
+        s.close()
+        rmSync(ksp, { recursive: true, force: true })
+      }
+    },
+  ],
   [
     'sondagem: contagem, voo e amerissagem',
     async () => {

@@ -1,5 +1,6 @@
 // Mapa-múndi (projeção equiretangular) em canvas: continentes, noite, estações,
-// traços previstos, veículos, ponto de impacto instantâneo e corredor.
+// traços previstos, veículos, ponto de impacto instantâneo e corredor. Em
+// outro corpo (os do KSP), só a grade, os traços e os veículos dele.
 
 import { useEffect, useState } from 'react'
 import { useCanvas } from './Chart'
@@ -38,13 +39,38 @@ const KIND_COLOR: Record<string, string> = {
   sounding: '#ff8a3d',
   debris: '#5b6a88',
   external: '#3ddc84',
+  ksp: '#a3e635',
+}
+
+/** Lugares conhecidos nos corpos do KSP. */
+const KSP_SITES: Record<string, [string, number, number][]> = {
+  kerbin: [
+    ['KSC', -0.0972, -74.5577],
+    ['Deserto', -6.5604, -143.95],
+    ['Woomerang', 45.29, 136.11],
+  ],
 }
 
 export function kindColor(kind: string): string {
   return KIND_COLOR[kind] ?? '#d9e2f2'
 }
 
-export function MapView({ tracks = [], height = 360, showStations = true, showDebris = false, center = 0 }: { tracks?: Track[]; height?: number; showStations?: boolean; showDebris?: boolean; center?: number }) {
+export function MapView({
+  tracks = [],
+  height = 360,
+  showStations = true,
+  showDebris = false,
+  center = 0,
+  body = 'earth',
+}: {
+  tracks?: Track[]
+  height?: number
+  showStations?: boolean
+  showDebris?: boolean
+  center?: number
+  body?: string
+}) {
+  const earth = body === 'earth'
   const [ready, setReady] = useState(land != null)
   useEffect(() => {
     loadLand().then(() => setReady(true))
@@ -76,7 +102,7 @@ export function MapView({ tracks = [], height = 360, showStations = true, showDe
         ctx.stroke()
       }
       // Continentes.
-      if (land) {
+      if (land && earth) {
         ctx.fillStyle = '#16294a'
         ctx.strokeStyle = '#2d4a7a'
         for (const ring of land) {
@@ -90,25 +116,35 @@ export function MapView({ tracks = [], height = 360, showStations = true, showDe
         }
       }
       if (!snap) return
-      // Noite.
-      const [sLat, sLon] = subsolar(snap.sun, snap.gmst)
-      ctx.fillStyle = 'rgba(0,0,0,0.38)'
-      ctx.beginPath()
-      const night = sLat > 0 ? 90 : -90
-      ctx.moveTo(0, Y(-night))
-      for (let px = 0; px <= w; px += 4) {
-        const lon = (px / w) * 360 - 180 + center
-        ctx.lineTo(px, Y(terminator(sLat, sLon, lon)))
+      if (!earth) {
+        ctx.font = '10px ui-monospace, monospace'
+        for (const [name, lat, lon] of KSP_SITES[body] ?? []) {
+          ctx.fillStyle = '#9fb4dd'
+          ctx.fillRect(X(lon) - 2.5, Y(lat) - 2.5, 5, 5)
+          ctx.fillText(name, X(lon) + 6, Y(lat) + 3)
+        }
       }
-      ctx.lineTo(w, Y(-night))
-      ctx.closePath()
-      ctx.fill()
-      ctx.fillStyle = '#ffd24d'
-      ctx.beginPath()
-      ctx.arc(X(sLon), Y(sLat), 4, 0, Math.PI * 2)
-      ctx.fill()
+      // Noite.
+      if (earth) {
+        const [sLat, sLon] = subsolar(snap.sun, snap.gmst)
+        ctx.fillStyle = 'rgba(0,0,0,0.38)'
+        ctx.beginPath()
+        const night = sLat > 0 ? 90 : -90
+        ctx.moveTo(0, Y(-night))
+        for (let px = 0; px <= w; px += 4) {
+          const lon = (px / w) * 360 - 180 + center
+          ctx.lineTo(px, Y(terminator(sLat, sLon, lon)))
+        }
+        ctx.lineTo(w, Y(-night))
+        ctx.closePath()
+        ctx.fill()
+        ctx.fillStyle = '#ffd24d'
+        ctx.beginPath()
+        ctx.arc(X(sLon), Y(sLat), 4, 0, Math.PI * 2)
+        ctx.fill()
+      }
       // Estações.
-      if (showStations && hello) {
+      if (earth && showStations && hello) {
         ctx.font = '10px ui-monospace, monospace'
         for (const st of hello.stations) {
           const live = snap.stations_live.find((s) => s.id === st.id)
@@ -118,7 +154,7 @@ export function MapView({ tracks = [], height = 360, showStations = true, showDe
         }
       }
       // Corredor de lançamento.
-      if (snap.corridor) {
+      if (earth && snap.corridor) {
         const c = snap.corridor
         ctx.strokeStyle = 'rgba(255,138,61,0.5)'
         ctx.setLineDash([4, 4])
@@ -135,7 +171,7 @@ export function MapView({ tracks = [], height = 360, showStations = true, showDe
       }
       const sel = snap.vehicles.find((v) => v.id === selected)
       // Pegada de visibilidade do selecionado.
-      if (sel && sel.central === 'earth' && sel.alt > 50 && sel.kind !== 'debris') {
+      if (earth && sel && sel.central === 'earth' && sel.alt > 50 && sel.kind !== 'debris') {
         ctx.strokeStyle = 'rgba(76,195,255,0.45)'
         drawLine(ctx, circle(sel.lat, sel.lon, footprintDeg(sel.alt, 5)), X, Y)
       }
@@ -163,13 +199,13 @@ export function MapView({ tracks = [], height = 360, showStations = true, showDe
       // Veículos.
       ctx.font = '11px system-ui, sans-serif'
       for (const v of snap.vehicles) {
-        if (v.central !== 'earth') continue
+        if (v.central !== body) continue
         if (v.kind === 'debris' && !showDebris) continue
         if (v.attached_to) continue
         drawVehicle(ctx, v, X(v.lon), Y(v.lat), v.id === selected)
       }
     },
-    [snap, ready, tracks, selected, showStations, showDebris, center],
+    [snap, ready, tracks, selected, showStations, showDebris, center, body],
   )
   const click = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!snap) return
@@ -179,7 +215,7 @@ export function MapView({ tracks = [], height = 360, showStations = true, showDe
     let best: Vehicle | null = null
     let bd = 6
     for (const v of snap.vehicles) {
-      if (v.central !== 'earth' || (v.kind === 'debris' && !showDebris)) continue
+      if (v.central !== body || (v.kind === 'debris' && !showDebris)) continue
       const d = Math.hypot(wrapLon(v.lon - lon), v.lat - lat)
       if (d < bd) {
         bd = d

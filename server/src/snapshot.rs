@@ -30,13 +30,13 @@ pub fn hello(a: &mut App) -> String {
         "t": w.t,
         "scenarios": scenarios::SCENARIOS,
         "catalog": catalog::ENTRIES,
-        "commands": commands::dictionary(),
+        "commands": commands::dictionary().into_iter().chain(crate::ksp::commands()).collect::<Vec<_>>(),
         "faults": FAULTS.iter().map(|(id, name, arg)| json!({"id": id, "name": name, "arg": arg})).collect::<Vec<_>>(),
         "stations": w.stations,
         "sites": catalog::sites(),
         "bodies": Body::ALL.iter().map(|b| json!({"id": b.id(), "name": b.name(), "radius": b.radius(), "parent": b.parent().map(|p| p.id()), "soi": num(b.soi())})).collect::<Vec<_>>(),
         "events": events,
-        "dictionary": dictionary_map(w),
+        "dictionary": dictionary_map(a),
     })
     .to_string()
 }
@@ -45,8 +45,15 @@ fn event(e: &jaci_sim::vehicle::Event) -> Value {
     json!({"t": e.t, "vehicle": e.vehicle, "level": format!("{:?}", e.level).to_lowercase(), "text": e.text})
 }
 
-fn dictionary_map(w: &World) -> Value {
+fn dictionary_map(a: &App) -> Value {
+    let w = &a.world;
     let mut m = serde_json::Map::new();
+    if let Some(link) = &a.ksp {
+        let defs = json!(crate::ksp::tm_defs());
+        for v in &link.vessels {
+            m.insert(v.id.to_string(), defs.clone());
+        }
+    }
     for v in &w.vehicles {
         if v.kind == Kind::Debris {
             continue;
@@ -64,11 +71,15 @@ fn dictionary_map(w: &World) -> Value {
 }
 
 pub fn dictionary(a: &App) -> Value {
-    json!({"type": "dictionary", "dictionary": dictionary_map(&a.world)})
+    json!({"type": "dictionary", "dictionary": dictionary_map(a)})
 }
 
-fn signature(w: &World) -> String {
+fn signature(a: &App) -> String {
+    let w = &a.world;
     let mut s = String::new();
+    for v in a.ksp.iter().flat_map(|l| &l.vessels) {
+        s.push_str(&format!("k{};", v.id));
+    }
     for v in w.vehicles.iter().filter(|v| v.kind != Kind::Debris) {
         s.push_str(&format!("{}:{}:{}:{};", v.id, v.stages.len(), v.chutes.len(), v.crew()));
     }
@@ -79,7 +90,7 @@ fn signature(w: &World) -> String {
 }
 
 pub fn dictionary_if_changed(a: &mut App) -> Option<String> {
-    let sig = signature(&a.world);
+    let sig = signature(a);
     if sig == a.dict_sig {
         return None;
     }
@@ -280,6 +291,18 @@ pub fn snapshot(a: &mut App) -> String {
         .collect();
     let mut vehicles: Vec<Value> = w.vehicles.iter().map(|v| vehicle(w, v)).collect();
     vehicles.extend(ext);
+    let ksp = a.ksp.as_ref().map(|l| {
+        vehicles.extend(l.vessels.iter().map(|v| crate::ksp::vehicle_json(v, w.t)));
+        json!({
+            "dir": l.ksp_dir.display().to_string(),
+            "scripts": l.dir.display().to_string(),
+            "kos": l.kos_installed,
+            "module_manager": l.mm_installed,
+            "patch": l.patch_installed,
+            "vessels": l.vessels.len(),
+            "live": l.vessels.iter().filter(|v| v.age() < 5.0).count(),
+        })
+    });
     json!({
         "type": "snapshot",
         "t": w.t,
@@ -300,6 +323,7 @@ pub fn snapshot(a: &mut App) -> String {
         "bodies": bodies,
         "sun": v3(sun),
         "stations_live": w.stations.iter().map(|s| json!({"id": s.id, "enabled": s.enabled})).collect::<Vec<_>>(),
+        "ksp": ksp,
     })
     .to_string()
 }
@@ -316,9 +340,12 @@ const HIST_LEN: usize = 3_600;
 /// Guarda uma amostra da telemetria de cada veículo (até 30 min de relógio).
 pub fn record_history(a: &mut App) {
     let t = a.world.t;
-    for v in a.world.vehicles.iter().filter(|v| v.kind != Kind::Debris && v.phase != jaci_sim::vehicle::Phase::Destroyed) {
-        let vals = telemetry::values(v, t);
-        let h = a.history.entry(v.id).or_default();
+    let sim = a.world.vehicles.iter().filter(|v| v.kind != Kind::Debris && v.phase != jaci_sim::vehicle::Phase::Destroyed).map(|v| (v.id, telemetry::values(v, t)));
+    // Naves do KSP só enquanto chega telemetria (o gráfico não repete o último valor).
+    let game = a.ksp.iter().flat_map(|l| &l.vessels).filter(|v| v.age() < 5.0).map(|v| (v.id, v.tm.clone()));
+    let all: Vec<(u32, Vec<(String, f64)>)> = sim.chain(game).collect();
+    for (id, vals) in all {
+        let h = a.history.entry(id).or_default();
         if h.rows.back().is_some_and(|(last, _)| *last == t) {
             continue;
         }

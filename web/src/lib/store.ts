@@ -20,6 +20,7 @@ export type View =
   | 'interplanetary'
   | 'procedures'
   | 'instructor'
+  | 'ksp'
 
 export interface UiState {
   view: View
@@ -28,7 +29,7 @@ export interface UiState {
   eventsOpen: boolean
 }
 
-const VIEWS: View[] = ['overview', 'launch', 'trajectory', 'orbit', 'rendezvous', 'systems', 'commands', 'telemetry', 'stations', 'interplanetary', 'procedures', 'instructor']
+const VIEWS: View[] = ['overview', 'launch', 'trajectory', 'orbit', 'rendezvous', 'systems', 'commands', 'telemetry', 'stations', 'interplanetary', 'procedures', 'instructor', 'ksp']
 
 function loadUi(): UiState {
   const base: UiState = { view: 'overview', selected: null, lang: 'pt', eventsOpen: true }

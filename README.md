@@ -8,7 +8,7 @@ espacial, estações, satélites e sondas interplanetárias. Simula os veículos
 controle: contagem regressiva com votação GO/NO-GO, segurança de voo, dinâmica de voo, encontro e
 acoplamento, energia, térmico, atitude, comunicações, suporte de vida, telecomando, alarmes,
 estações de solo e procedimentos. Também troca telemetria e telecomando CCSDS por UDP com um
-computador de bordo de verdade.
+computador de bordo de verdade, e acompanha e comanda naves do Kerbal Space Program pelo kOS.
 
 Jaci é a deusa tupi da Lua.
 
@@ -19,7 +19,8 @@ Jaci é a deusa tupi da Lua.
 | [`sim/`](sim/) | núcleo de simulação em Rust: física, veículos, guiamento, subsistemas, controle de lançamento, planejador de manobras |
 | [`server/`](server/) | servidor `jaci`: roda a simulação, fala WebSocket com a interface e CCSDS por UDP; `computador-de-bordo`, um voo de demonstração com telemetria CCSDS |
 | [`web/`](web/) | interface (TypeScript + React + three.js): os consoles |
-| [`docs/`](docs/) | protocolo da interface e do enlace CCSDS |
+| [`ksp/`](ksp/) | ponte com o Kerbal Space Program: o script do kOS (`jaci.ks`), o boot e o patch do Module Manager |
+| [`docs/`](docs/) | protocolo da interface, do enlace CCSDS e da ponte com o kOS |
 | [`tests/`](tests/) | teste de ponta a ponta do servidor |
 
 ## Instalar
@@ -67,6 +68,7 @@ inglês.
 | `observacao` | Satélite de observação em operação: câmera, gravador de bordo, passagens nas estações, rodas de reação |
 | `marte` | Sonda e estágio de escape em órbita de estacionamento, na janela de Marte de 2026: porkchop, injeção, cruzeiro, correção e captura |
 | `lua` | Sonda lunar: injeção translunar e inserção em órbita da Lua |
+| `ksp` | Nenhum veículo simulado: só as naves do Kerbal Space Program (veja abaixo) |
 
 ## Consoles
 
@@ -111,6 +113,7 @@ inglês.
   travado ou degradado, roda de reação, girômetros, rastreador de estrelas, transmissor, aquecedor,
   vazamento na cabine, remoção de CO₂, paraquedas, célula a combustível, barco na área, falha de solo
   e tempestade.
+* **Kerbal Space Program (KSP):** a ligação com o jogo e o controle das naves pelo kOS (veja abaixo).
 
 A interface está em português e inglês (botão no canto); os textos do servidor que têm tradução
 também mudam.
@@ -171,12 +174,65 @@ Cada APID novo aparece como um veículo externo, com mapa, telemetria e comandos
 pacotes de telecomando para o endereço de onde a telemetria veio). O formato está em
 [`docs/protocolo.md`](docs/protocolo.md).
 
+## Kerbal Space Program (kOS)
+
+O Jaci acompanha e comanda naves do [Kerbal Space Program](https://www.kerbalspaceprogram.com/)
+pelo [kOS](https://ksp-kos.github.io/KOS_DOC/), o mod de computadores de bordo programáveis. Um
+script do kOS (`ksp/Script/jaci/jaci.ks`) roda na nave, escreve a telemetria e executa os comandos;
+os dois conversam por arquivos na pasta `Ships/Script` do KSP, que é o volume `0:` (Archive) do kOS.
+Não precisa de outro mod nem de rede.
+
+```bash
+ckan install kOS          # ou pelo CKAN gráfico; o Module Manager vem junto na maioria das instalações
+jaci --ksp --open         # acha o KSP do Steam; ou --ksp "/caminho/do/Kerbal Space Program"
+```
+
+Também dá para ligar pela interface, no console **KSP**, ou pelo atalho "Jaci com o KSP" do menu.
+Ao ligar, o Jaci copia `jaci/jaci.ks` e `boot/jaci.ks` para `Ships/Script`. Depois, no jogo:
+
+1. Monte a nave com um computador kOS (peça *CX-4181* ou *KAL9000*). O botão "Pôr o kOS em todas
+   as peças de comando" no console KSP instala um patch do Module Manager
+   (`GameData/JaciKOS/jaci-kos.cfg`) que põe o computador, já com o boot do Jaci, em toda cápsula e
+   sonda (vale depois de reiniciar o KSP; apague a pasta para desfazer).
+2. No VAB, no menu da peça kOS, escolha o arquivo de boot `jaci.ks`; ou, já na plataforma, abra o
+   terminal do kOS e digite `RUNPATH("0:/jaci/jaci.ks").`
+3. A nave aparece no Jaci em segundos, como veículo do tipo "Nave do KSP".
+
+O que dá para fazer com ela:
+
+* **Telemetria** (5 por segundo): altitude, velocidades, apoastro e periastro com os tempos até
+  eles, elementos orbitais, pressão dinâmica, aceleração, empuxo/peso, massa, empuxo, potência,
+  arfagem e rumo, estágio, combustível, oxidante, monopropelente, carga elétrica (com alarme),
+  combustível sólido, manobra e alvo. Entra nos gráficos, alarmes e histórico como a dos simulados.
+* **Mapa e órbita** no corpo em que a nave está (Kerbin, Mun, Duna, …, inclusive os de pacotes de
+  planetas), com o traço previsto e o KSC; relógio do KSP no calendário de Kerbin.
+* **Lançamento automático com contagem:** a contagem corre no Jaci; no T-0 o kOS acende, faz a curva
+  de gravidade, separa os estágios vazios, corta no apoastro alvo, repõe o que o arrasto tirou e
+  circulariza fora da atmosfera com uma manobra que ele mesmo executa.
+* **Voo:** separar estágio e aborto (com confirmação em dois passos), potência, aceleração do tempo
+  do jogo, parar o piloto automático.
+* **Atitude:** prógrado, retrógrado, normal, antinormal, radial, para cima, rumo e arfagem,
+  manter, Sol, alvo, livre; SAS e RCS.
+* **Manobras:** circularizar no apoastro ou no periastro, criar nós (prógrado, normal, radial),
+  executar o próximo nó (aponta, espera, queima centrada no nó e corta no Δv) e apagar.
+* **Sistemas:** trem de pouso, luzes, freios, paraquedas, painéis solares, os 10 grupos de ação e o
+  alvo.
+
+Sem conexão com o KSC (CommNet ligado e a nave sem antena ou atrás de um planeta) o kOS não chega
+ao Archive: não há telemetria nem comandos, como numa perda de sinal de verdade. O kOS só roda em
+naves carregadas (a ativa e as que estão a menos de ~2,5 km dela). O formato dos arquivos está em
+[`docs/protocolo.md`](docs/protocolo.md); `ksp/verificar/verificar.sh` compila os scripts com o
+compilador do próprio kOS, sem abrir o jogo.
+
+![Console do KSP](docs/img/ksp.png)
+
 ## Testes
 
 ```bash
 cargo test --release            # núcleo: órbitas, efemérides, atmosfera, subsistemas e voos completos
 cd web && npm test              # interface: traduções
-node tests/servidor.mjs         # servidor de ponta a ponta (depois de cargo build --release)
+node tests/servidor.mjs         # servidor de ponta a ponta (depois de cargo build --release),
+                                # inclusive a ponte do KSP com um kOS de mentira
 ```
 
 Os voos completos (`sim/tests/missoes.rs`) contam, votam e lançam cada cenário e conferem o
