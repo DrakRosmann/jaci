@@ -282,6 +282,130 @@ a.button:hover {
   }
 }
 
+.timeline-chart {
+  --tl-label: 130px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tl-lane {
+  display: grid;
+  grid-template-columns: var(--tl-label) 1fr;
+  align-items: center;
+  min-height: 22px;
+}
+.tl-lane.small {
+  min-height: 16px;
+}
+.tl-lane.axis {
+  min-height: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.tl-label {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 6px;
+}
+.tl-track {
+  position: relative;
+  height: 100%;
+  min-height: inherit;
+  background: #0a1222;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.tl-hour {
+  position: absolute;
+  top: 2px;
+  font: 10px var(--mono);
+  color: var(--muted);
+  border-left: 1px solid var(--line);
+  padding-left: 3px;
+  white-space: nowrap;
+}
+.tl-bar {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border-radius: 2px;
+}
+.tl-bar.eclipse {
+  background: #2a3550;
+}
+.tl-bar.pass {
+  background: var(--good);
+}
+.tl-bar.burn {
+  background: var(--accent);
+}
+.tl-bar.burn.now {
+  animation: pulse 0.6s ease-in-out infinite alternate;
+}
+.tl-bar.window {
+  background: #1d3b66;
+  border: 1px solid var(--accent-2);
+}
+.tl-tick {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  background: var(--info);
+}
+.tl-tick.good {
+  background: var(--good);
+}
+.tl-tick.warn {
+  background: var(--warn);
+}
+.tl-tick.alarm,
+.tl-tick.fault {
+  background: var(--bad);
+}
+.tl-tick.cmd {
+  background: var(--accent-2);
+  width: 3px;
+}
+.tl-diamond {
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.tl-diamond.hold {
+  background: var(--warn);
+}
+.tl-apsis {
+  position: absolute;
+  top: 2px;
+  font-size: 11px;
+  transform: translateX(-50%);
+  color: var(--accent-2);
+}
+.tl-apsis.ap {
+  color: #c084fc;
+}
+.tl-now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #fff;
+  opacity: 0.8;
+  pointer-events: none;
+}
+@media (max-width: 760px) {
+  .timeline-chart {
+    --tl-label: 80px;
+  }
+}
+
 .sound {
   position: relative;
   display: flex;

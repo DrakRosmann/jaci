@@ -7,6 +7,7 @@ mod recording;
 mod room;
 mod scripts;
 mod snapshot;
+mod timeline;
 
 use anyhow::Context;
 use axum::{
@@ -862,6 +863,7 @@ fn handle(ctx: &Ctx, conn: u64, msg: &Value) -> Option<Value> {
             "command" => return Some(json!({"type": "command_result", "req": req, "ok": false, "error": "em reprodução: comandos desligados"})),
             "plan" | "plan_apply" => return Some(json!({"type": kind, "req": req, "ok": false, "error": "em reprodução: comandos desligados"})),
             "passes" => return Some(json!({"type": "passes", "req": req, "vehicle": vid(msg), "passes": []})),
+            "timeline" => return Some(json!({"type": "timeline", "req": req, "vehicle": vid(msg), "t": rp.info()["t"], "replay": true, "eclipses": [], "apsides": [], "passes": [], "burns": [], "commands": [], "countdown": [], "window": null, "faults": []})),
             "predict" => {
                 let id = vid(msg);
                 let span = msg.get("span").and_then(|x| x.as_f64()).unwrap_or(6_000.0).clamp(60.0, 3.0e8);
@@ -1000,6 +1002,15 @@ fn handle(ctx: &Ctx, conn: u64, msg: &Value) -> Option<Value> {
             let v = a.world.vehicle(id)?.clone();
             let p = jaci_sim::ground::passes(&v, &a.world.stations, a.world.t, span);
             json!({"type": "passes", "req": req, "vehicle": id, "passes": p})
+        }
+        "timeline" => {
+            let id = vid(msg);
+            let span = msg.get("span").and_then(|x| x.as_f64()).unwrap_or(6.0 * 3_600.0);
+            // As falhas planejadas só aparecem para o instrutor (ou com a sala desligada).
+            let faults = !a.room || a.members.get(&conn).is_some_and(|m| m.position == "SIM");
+            let mut out = timeline::build(&a, id, span, faults);
+            out["req"] = req;
+            out
         }
         "porkchop" => {
             let from = msg.get("from").and_then(|x| x.as_str()).and_then(Body::from_id).unwrap_or(Body::Earth);

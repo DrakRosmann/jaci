@@ -141,6 +141,10 @@ sequência automática de ativação de satélite.
   vazamento na cabine, remoção de CO₂, paraquedas, célula a combustível, barco na área, falha de solo
   e tempestade.
 * **Kerbal Space Program (KSP):** a ligação com o jogo e o controle das naves pelo kOS (veja abaixo).
+* **Linha do tempo (FAO):** o que vem pela frente para o veículo, em faixas — eventos recentes,
+  contagem e janela, queimas, comandos agendados, eclipses, periastros e apoastros, passagens em
+  cada estação e (para o instrutor) as falhas planejadas —, com zoom de 1 h a 3 dias e a lista dos
+  próximos acontecimentos.
 
 A interface está em português e inglês (botão no canto); os textos do servidor que têm tradução
 também mudam.

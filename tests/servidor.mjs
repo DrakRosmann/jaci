@@ -570,6 +570,40 @@ const cases = [
     },
   ],
   [
+    'linha do tempo: eclipses, apsides, passagens, queimas e contagem',
+    async () => {
+      const s = await server('tripulada')
+      try {
+        const c = s.ws
+        const snap = await until(c, 'instantâneo', (x) => x.vehicles.length > 1)
+        const st = snap.vehicles.find((v) => v.kind === 'station')
+        const tl = await c.request({ type: 'timeline', vehicle: st.id, span: 21600 })
+        assert(tl.eclipses.length >= 3 && tl.eclipses.every(([a, b]) => b > a), `eclipses ${tl.eclipses.length}`)
+        assert(tl.apsides.length >= 6 && tl.apsides.length <= 10, `apsides ${tl.apsides.length}`)
+        assert(tl.passes.length > 3, 'passagens')
+        // Queima planejada aparece.
+        const sent = await c.request({ type: 'command', vehicle: st.id, cmd: { id: 'burn', args: { t: 1800, dv_r: 0, dv_t: 0.5, dv_n: 0 } } })
+        assert(sent.ok, `queima: ${sent.error}`)
+        // O comando sobe pelo enlace e vira queima quando executa a bordo.
+        let tl2
+        for (let i = 0; i < 30; i++) {
+          tl2 = await c.request({ type: 'timeline', vehicle: st.id, span: 21600 })
+          if (tl2.burns.length) break
+          await sleep(200)
+        }
+        assert(tl2.burns.length === 1 && Math.abs(tl2.burns[0].t - tl2.t - 1800) < 60, `queimas ${JSON.stringify(tl2.burns)}`)
+        // A cápsula na plataforma: a sequência da contagem em hora absoluta.
+        const cap = snap.launch.vehicle
+        await c.request({ type: 'command', vehicle: cap, cmd: { id: 'count_start', args: {} } })
+        const tl3 = await c.request({ type: 'timeline', vehicle: cap, span: 21600 })
+        assert(tl3.countdown.length > 3 && tl3.countdown.every((x) => x.t >= tl3.t), 'contagem')
+        assert(tl3.eclipses.length === 0, 'eclipse na plataforma')
+      } finally {
+        s.close()
+      }
+    },
+  ],
+  [
     'marte: porkchop',
     async () => {
       const s = await server('marte')

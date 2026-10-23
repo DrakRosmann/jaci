@@ -35,6 +35,7 @@ const VIEWS: Record<View, Lazy> = {
   procedures: view(() => import('./views/Procedures'), (m) => m.Procedures),
   instructor: view(() => import('./views/Instructor'), (m) => m.Instructor),
   ksp: view(() => import('./views/Ksp'), (m) => m.KspView),
+  timeline: view(() => import('./views/Timeline'), (m) => m.Timeline),
 }
 
 /** Sem instantâneo há mais que isso, os dados são dados como congelados. */

@@ -1365,4 +1365,21 @@ export const EN: Record<string, string> = {
   'Sol e Lua perturbam as órbitas': 'Sun and Moon perturb the orbits',
   'só o corpo central (com J2)': 'central body only (with J2)',
   'Dicionários CCSDS (XTCE)': 'CCSDS dictionaries (XTCE)',
+
+  // ── Linha do tempo ──
+  'Linha do tempo': 'Timeline',
+  'Para trás': 'Back',
+  'Voltar ao agora': 'Back to now',
+  'Para a frente': 'Forward',
+  'Na reprodução, a linha do tempo mostra só os eventos gravados.': 'During replay the timeline shows only the recorded events.',
+  'em espera: hora se retomar agora': 'on hold: time if resumed now',
+  'Queimas': 'Burns',
+  'Comandos agendados': 'Scheduled commands',
+  'Eclipse': 'Eclipse',
+  'Apsides': 'Apsides',
+  'Próximos acontecimentos': 'Coming up',
+  'Nada previsto nesta janela.': 'Nothing expected in this window.',
+  'AOS': 'AOS',
+  'Entrada no eclipse': 'Eclipse entry',
+  'Falha planejada': 'Planned failure',
 }
