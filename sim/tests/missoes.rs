@@ -296,6 +296,9 @@ fn sonda_chega_a_marte() {
     if v.central == Body::Sun {
         let tcm2 = planner::tcm(&v, w.t, Body::Mars, arrival, 400.0).expect("TCM 2");
         println!("{}", tcm2.summary);
+        // Só o erro de execução da primeira: o planejador e a simulação concordam.
+        assert!(tcm2.total_dv < 30.0, "TCM 2 de {:.1} m/s", tcm2.total_dv);
+        assert!(!tcm2.summary.contains("só Lambert"));
         w.add_plan(vid, &tcm2);
     }
     let mut steps = 0;
@@ -534,3 +537,39 @@ fn pouso_em_marte() {
 }
 
 
+
+/// No cruzeiro, a simulação e o propagador do planejador (os dois com os
+/// planetas) andam juntos, mesmo logo depois de sair da Terra.
+#[test]
+fn cruzeiro_simulacao_e_planejador_concordam() {
+    use jaci_sim::bodies::Body;
+    let mut w = scenarios::build("marte", t0(), 4).unwrap();
+    let vid = w.vehicles[0].id;
+    // Põe a sonda direto no cruzeiro, 10 dias depois de sair da Terra.
+    {
+        let v = w.vehicles.iter_mut().find(|v| v.id == vid).unwrap();
+        v.stages.remove(0);
+        let (re, ve) = Body::Earth.helio_state(w.t);
+        v.central = Body::Sun;
+        v.r = re + ve.unit() * 9.5e8;
+        v.v = ve + ve.unit() * 3_000.0;
+        v.phase = jaci_sim::vehicle::Phase::Coast;
+    }
+    let (r0, v0, ta) = { let v = w.vehicle(vid).unwrap(); (v.r, v.v, w.t) };
+    for dias in [1.0, 10.0, 50.0] {
+        let end = ta + dias * 86_400.0;
+        while w.t < end - 1e-6 {
+            let h = w.vehicle(vid).unwrap().max_step(w.t).min(6.0 * 3_600.0).min(end - w.t);
+            w.step(h);
+        }
+        let (_, rp, _) = jaci_sim::nbody::propagate(r0, v0, ta, end, None, |_, _, _| false);
+        let (rk, _) = jaci_sim::orbit::propagate_kepler(r0, v0, end - ta, Body::Sun.mu());
+        let v = w.vehicle(vid).unwrap();
+        let (diff, pert) = ((v.r - rp).norm() / 1e3, (rp - rk).norm() / 1e3);
+        println!("{dias:>4} d: sim − planejador {diff:.1} km; n corpos − Kepler {pert:.0} km");
+        if dias == 50.0 {
+            assert!(diff < 200.0, "simulação e planejador a {diff:.0} km");
+            assert!(pert > 100_000.0, "os planetas quase não mexeram: {pert:.0} km");
+        }
+    }
+}

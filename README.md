@@ -266,7 +266,8 @@ ficam desligados. Ao vivo, o botão CSV do console de telemetria baixa os últim
 
 * **Mecânica orbital:** corpo central com J2 mais a maré dos terceiros corpos — o Sol e a Lua dentro
   da esfera da Terra, o Sol e a Terra na da Lua, o Sol na dos planetas (um geoestacionário ganha
-  0,93° de inclinação por ano, como os de verdade; desliga no Instrutor); elementos keplerianos,
+  0,93° de inclinação por ano, como os de verdade; desliga no Instrutor), e no cruzeiro
+  heliocêntrico Vênus, Terra, Lua, Marte, Júpiter e Saturno (n corpos); elementos keplerianos,
   propagação em variáveis universais, Lambert, Hohmann, bielíptica, Clohessy-Wiltshire. Cônicas
   remendadas: o veículo troca de corpo central ao cruzar a esfera de influência (Terra, Lua, Sol,
   planetas).
@@ -392,12 +393,20 @@ resultado: apogeu e amerissagem do VSB-30, órbitas do VLM-1, da heliossíncrona
 cápsula a poucos km do ponto previsto. A sonda a Marte faz a viagem inteira: escolhe a partida em
 que o v∞ cai no plano da órbita de estacionamento, simula a queima finita de injeção até o C3, sai
 da Terra, corrige a trajetória duas vezes, chega com o periastro pedido e entra em órbita de Marte.
+* **Cruzeiro com n corpos:** o traço previsto e o planejador usam o mesmo modelo da simulação
+  (RK4 com os planetas a cada subpasso; na simulação, a maré dos planetas entra no meio do passo,
+  e o passo encurta perto de um planeta). A correção de trajetória (TCM) parte do Lambert, mira a
+  posição de chegada sem o planeta de destino (Newton 3×3) e acerta o plano B na entrada da esfera
+  de influência (B·T e B·R, correção de menor norma). Como a Terra continua puxando depois da
+  esfera, a primeira TCM corrige também o que as cônicas remendadas da injeção não veem; a segunda
+  fica só com o erro de execução da primeira (uns 9 m/s).
 
 ## Limitações conhecidas
 
-* Cônicas remendadas: no cruzeiro heliocêntrico só o Sol puxa (o planejador conta com isso), e a
-  Lua tem órbita média (erro de alguns graus). O traço previsto e o planejador usam só o corpo
-  central com J2.
+* Cônicas remendadas na troca de corpo central: dentro de uma esfera de influência, o corpo central
+  com J2 e a maré do Sol (e da Lua ou da Terra); fora, os planetas. A injeção ainda é planejada com
+  cônicas (a primeira TCM corrige). A Lua tem órbita média (erro de alguns graus). Fora do cruzeiro,
+  o traço previsto e o planejador usam só o corpo central com J2.
 * Os elementos orbitais (`orb.inc`, `orb.raan`…) ficam no equador da Terra (J2000) em qualquer
   corpo, para o planejador; a inclinação no equador do corpo central vai em `orb.inc_eq`.
 * A atitude dos foguetes e dos veículos em alta aceleração do tempo é cinemática (gira com taxa

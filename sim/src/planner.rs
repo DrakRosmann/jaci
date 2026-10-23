@@ -503,8 +503,95 @@ pub fn tcm(v: &Vehicle, t_now: f64, to: Body, arrival: f64, pe_km: f64) -> Optio
     let side = vt.cross(rt).cross(vt).unit();
     let aim = rt + side * b;
     let (lv1, _) = lambert(r1, aim, tof, mu, true)?;
-    let dv = lv1 - v1;
-    Some(plan(vec![node("Correção de trajetória (TCM)", dt, r1, v1, dv)], format!("TCM de {:.1} m/s para chegar a {} com periastro de {:.0} km", dv.norm(), to.name(), pe_km)))
+    let mut dv = lv1 - v1;
+    // No cruzeiro heliocêntrico, o Lambert é só o chute: a correção
+    // diferencial com os planetas acerta o plano B na chegada.
+    let mut note = "";
+    if central == Body::Sun {
+        let t1 = t_now + dt;
+        match target_position(r1, v1, t1, to, arrival, aim - rt).and_then(|d| target_b_plane(r1, v1, t1, d, to, arrival, rp, side)) {
+            Some(d) => dv = d,
+            None => note = " (sem convergir com n corpos: só Lambert)",
+        }
+    }
+    Some(plan(vec![node("Correção de trajetória (TCM)", dt, r1, v1, dv)], format!("TCM de {:.1} m/s para chegar a {} com periastro de {:.0} km{note}", dv.norm(), to.name(), pe_km)))
+}
+
+/// Primeira fase: a queima que leva a sonda, com os planetas mas sem o de
+/// chegada, ao ponto `aim` (relativo a `to`) no instante `arrival`. Newton
+/// 3×3 a partir de nenhuma queima.
+fn target_position(r1: Vec3, v1: Vec3, t1: f64, to: Body, arrival: f64, aim: Vec3) -> Option<Vec3> {
+    let at = |dv: Vec3| {
+        let (_, r, _) = crate::nbody::propagate(r1, v1 + dv, t1, arrival, Some(to), |_, _, _| false);
+        r - to.helio_state(arrival).0
+    };
+    let mut dv = Vec3::ZERO;
+    for _ in 0..8 {
+        let p = at(dv);
+        let err = aim - p;
+        if err.norm() < 0.1 * to.soi() {
+            return Some(dv);
+        }
+        let eps = 0.05;
+        let cols: Vec<Vec3> = [Vec3::X, Vec3::Y, Vec3::Z].into_iter().map(|e| (at(dv + e * eps) - p) / eps).collect();
+        // Cramer: J·x = erro.
+        let det = cols[0].dot(cols[1].cross(cols[2]));
+        if det.abs() < 1e-9 {
+            return None;
+        }
+        let x = Vec3::new(err.dot(cols[1].cross(cols[2])), cols[0].dot(err.cross(cols[2])), cols[0].dot(cols[1].cross(err))) / det;
+        dv += if x.norm() > 300.0 { x.unit() * 300.0 } else { x };
+    }
+    None
+}
+
+/// Plano B na entrada da esfera de `to` depois de uma queima `dv` em `t1`
+/// (n corpos). Devolve (B·T, B·R), a direção de chegada e o v∞.
+fn b_after(r1: Vec3, v1: Vec3, t1: f64, dv: Vec3, to: Body, t_max: f64) -> Option<(f64, f64, Vec3, f64)> {
+    let (_, r, v) = crate::nbody::soi_entry(r1, v1 + dv, t1, to, t_max)?;
+    crate::nbody::b_plane(r, v, to.mu())
+}
+
+/// Newton no plano B: corrige `dv` até o B da chegada ter o tamanho que dá o
+/// periastro `rp` (na direção de `side`, a da mira). Duas metas e três
+/// incógnitas: a correção de menor norma, Jᵀ(JJᵀ)⁻¹·erro.
+#[allow(clippy::too_many_arguments)]
+fn target_b_plane(r1: Vec3, v1: Vec3, t1: f64, mut dv: Vec3, to: Body, arrival: f64, rp: f64, side: Vec3) -> Option<Vec3> {
+    let t_max = arrival + 60.0 * 86_400.0;
+    for _ in 0..10 {
+        let (bt, br, s, vinf) = b_after(r1, v1, t1, dv, to, t_max)?;
+        // B pedido: o parâmetro de impacto do periastro, na direção da mira.
+        let b = rp * (1.0 + 2.0 * to.mu() / (rp * vinf * vinf)).sqrt();
+        let t_ax = s.cross(Vec3::Z).unit();
+        let r_ax = s.cross(t_ax);
+        let dir = (side - s * side.dot(s)).unit();
+        let (gt, gr) = (b * dir.dot(t_ax), b * dir.dot(r_ax));
+        let (et, er) = (gt - bt, gr - br);
+        if (et * et + er * er).sqrt() < 5e3 {
+            return Some(dv);
+        }
+        // Jacobiano por diferenças (0,05 m/s em cada eixo).
+        let eps = 0.05;
+        let mut j = [[0.0; 3]; 2];
+        for (k, e) in [Vec3::X, Vec3::Y, Vec3::Z].into_iter().enumerate() {
+            let (bt2, br2, _, _) = b_after(r1, v1, t1, dv + e * eps, to, t_max)?;
+            j[0][k] = (bt2 - bt) / eps;
+            j[1][k] = (br2 - br) / eps;
+        }
+        // (JJᵀ)⁻¹ de 2×2.
+        let a = j[0][0] * j[0][0] + j[0][1] * j[0][1] + j[0][2] * j[0][2];
+        let bb = j[0][0] * j[1][0] + j[0][1] * j[1][1] + j[0][2] * j[1][2];
+        let d = j[1][0] * j[1][0] + j[1][1] * j[1][1] + j[1][2] * j[1][2];
+        let det = a * d - bb * bb;
+        if det.abs() < 1e-12 {
+            return None;
+        }
+        let (yt, yr) = ((d * et - bb * er) / det, (a * er - bb * et) / det);
+        let step = Vec3::new(j[0][0] * yt + j[1][0] * yr, j[0][1] * yt + j[1][1] * yr, j[0][2] * yt + j[1][2] * yr);
+        // Passos grandes demais saem da região em que o linear vale.
+        dv += if step.norm() > 50.0 { step.unit() * 50.0 } else { step };
+    }
+    None
 }
 
 /// Captura (inserção orbital) no periastro de uma hipérbole de chegada.

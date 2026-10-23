@@ -1623,7 +1623,9 @@ impl World {
         if v.phase.is_final() {
             return vec![];
         }
-        let samples = if v.central == Body::Sun || v.r.norm() > 2e9 {
+        let samples = if v.central == Body::Sun {
+            crate::nbody::samples(v.r, v.v, self.t, span, step)
+        } else if v.r.norm() > 2e9 {
             // Heliocêntrico: Kepler puro em passos.
             let mut out = Vec::new();
             let mut tt = 0.0;

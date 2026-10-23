@@ -678,16 +678,16 @@ pub fn third_body_accel(central: Body, r: Vec3, perturbers: &[(Body, Vec3, f64)]
 
 /// Quem perturba quem: para cada corpo central, os terceiros corpos e onde estão.
 /// Dentro da esfera de influência de um corpo, o Sol e a Lua (ou a Terra, na
-/// Lua). No cruzeiro heliocêntrico, nenhum: as cônicas remendadas do
-/// planejador contam com isso, e a Terra logo depois da esfera ainda puxaria
-/// a sonda bem mais que o modelo prevê.
+/// Lua). No cruzeiro heliocêntrico, os planetas (veja `nbody`): o planejador
+/// usa o mesmo modelo, e a TCM corrige o que a Terra ainda puxa depois da
+/// esfera de influência.
 pub fn perturbers_at(centrals: &[Body], t: f64) -> Vec<(Body, Vec3, f64)> {
     let mut out = Vec::new();
     for &c in centrals {
         let others: &[Body] = match c {
             Body::Earth => &[Body::Sun, Body::Moon],
             Body::Moon => &[Body::Sun, Body::Earth],
-            Body::Sun => &[],
+            Body::Sun => &crate::nbody::PERTURBERS,
             _ => &[Body::Sun],
         };
         for &p in others {
@@ -1002,6 +1002,11 @@ impl Vehicle {
         // Perto de um corpo com atmosfera, mais devagar.
         if self.central.has_atmosphere() && alt < 400e3 {
             h = h.min(10.0);
+        }
+        // No cruzeiro, a maré dos planetas entra constante no passo: perto de um
+        // deles, passos curtos.
+        if self.central == Body::Sun {
+            h = h.min(crate::nbody::step_size(self.r, self.v, t));
         }
         h
     }
@@ -1378,7 +1383,14 @@ impl Vehicle {
         }
         // Sol e Lua (ou o que perturba este corpo central): constante no passo, que é
         // curto perto do tempo em que eles mudam.
-        let extra = rcs + third_body_accel(self.central, self.r, env.perturbers);
+        // No cruzeiro, os planetas no meio do passo (a maré muda depressa perto
+        // de um deles), o mesmo modelo do planejador.
+        let tides = if self.central == Body::Sun && !env.perturbers.is_empty() {
+            crate::nbody::perturbation(self.r + self.v * (h / 2.0), t + h / 2.0)
+        } else {
+            third_body_accel(self.central, self.r, env.perturbers)
+        };
+        let extra = rcs + tides;
         let forces = Forces {
             thrust,
             mass,

@@ -418,7 +418,9 @@ impl Replay {
         let vec3 = |x: &Value| Some(Vec3::new(x[0].as_f64()?, x[1].as_f64()?, x[2].as_f64()?));
         let (Some(r), Some(vel), Some(central)) = (vec3(&v["r"]), vec3(&v["v"]), v["central"].as_str().and_then(Body::from_id)) else { return (None, vec![]) };
         let t = f["t"].as_f64().unwrap_or(0.0);
-        let samples = if central == Body::Sun || r.norm() > 2e9 {
+        let samples = if central == Body::Sun {
+            jaci_sim::nbody::samples(r, vel, t, span, step)
+        } else if r.norm() > 2e9 {
             let mut out = Vec::new();
             let mut tt = 0.0;
             while tt <= span {

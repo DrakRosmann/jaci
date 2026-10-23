@@ -6,6 +6,7 @@ pub mod bodies;
 pub mod catalog;
 pub mod guidance;
 pub mod math;
+pub mod nbody;
 pub mod orbit;
 pub mod subsystems;
 pub mod time;
