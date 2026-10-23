@@ -1,12 +1,30 @@
 // Formato das mensagens do servidor (veja server/src/snapshot.rs).
 
-export type Level = 'info' | 'good' | 'warn' | 'alarm'
+export type Level = 'info' | 'good' | 'warn' | 'alarm' | 'chat'
 
 export interface EventMsg {
   t: number
   vehicle: number | null
   level: Level
   text: string
+  /** Conversa nos loops: quem falou e em qual loop. */
+  from?: string
+  channel?: string
+}
+
+/** Posição da sala de controle e o que ela comanda (vem do servidor). */
+export interface Role {
+  id: string
+  name: string
+  description: string
+  groups: string[]
+  launch: string[]
+  sim: string[]
+}
+
+export interface Room {
+  on: boolean
+  members: { name: string; position: string }[]
 }
 
 export interface TmDef {
@@ -64,6 +82,7 @@ export interface Hello {
   bodies: { id: string; name: string; radius: number; parent: string | null; soi: number | null }[]
   events: EventMsg[]
   dictionary: Record<string, TmDef[]>
+  roles: Role[]
   /** Na reprodução: o estado, as marcas da linha do tempo e a hora de alguns quadros. */
   replay?: ReplayInfo & { markers: ReplayMarker[]; times: [number, number][] }
 }
@@ -284,7 +303,7 @@ export interface Launch {
   clock: string
   hold_reason: string
   sequence: SeqItem[]
-  positions: { id: string; name: string; go: boolean; manual: boolean | null; reason: string | null; polled: boolean | null }[]
+  positions: { id: string; name: string; go: boolean; manual: boolean | null; reason: string | null; polled: boolean | null; awaiting?: boolean }[]
   criteria: { id: string; name: string; position: string; ok: boolean; value: string; limit: string }[]
   window: [number, number] | null
   loading: boolean
@@ -352,6 +371,7 @@ export interface Snapshot {
   recording?: RecordingStatus | null
   /** Presente quando o servidor está reproduzindo uma gravação. */
   replay?: ReplayInfo | null
+  room?: Room
 }
 
 export interface RecordingStatus {

@@ -122,6 +122,7 @@ pub fn dictionary() -> Vec<CmdDef> {
         def("count_recycle", "Recomeçar em T-10 min", "Lançamento", "Volta a contagem para T-10 min", vec![], false, true, &launch),
         def("count_scrub", "Cancelar o lançamento", "Lançamento", "Cancela a tentativa de hoje e esvazia os tanques", vec![], true, true, &launch),
         def("poll", "Votação GO/NO-GO", "Lançamento", "Pergunta a cada posição se está GO", vec![], false, true, &launch),
+        def("vote", "Voto GO/NO-GO", "Lançamento", "Resposta de uma posição ocupada por uma pessoa na votação", vec![a("position", "Posição", "text"), e("go", "Voto", vec![("go", "GO"), ("nogo", "NO-GO")])], false, true, &launch),
         def("position", "Posição GO/NO-GO", "Lançamento", "Força o estado de uma posição do console", vec![a("position", "Posição", "text"), e("go", "Estado", vec![("go", "GO"), ("nogo", "NO-GO"), ("auto", "Automático")])], false, true, &launch),
         def("load", "Carregamento de propelente", "Lançamento", "Liga ou para o carregamento dos tanques criogênicos", vec![e("on", "Carregamento", ON_OFF.to_vec())], false, true, &launch),
         def("window", "Janela de lançamento", "Lançamento", "Ajusta o T-0 para o plano de outro veículo (encontro) ou para uma hora", vec![opt(a("target", "Veículo alvo", "vehicle")), opt(a("utc", "T-0 (UTC)", "utc"))], false, true, &launch),

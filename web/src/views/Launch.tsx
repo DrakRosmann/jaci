@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Bar, CmdButton, Empty, Panel, Tile, sendCommand } from '../components/ui'
 import { t, tx } from '../lib/i18n'
 import { latlon, num, utc } from '../lib/format'
+import { canVote, myLaunchPositions } from '../lib/room'
 import { useStore } from '../lib/store'
 import type { Vehicle } from '../types'
 
@@ -18,13 +19,40 @@ export function LaunchView() {
   const snap = useStore((s) => s.snap)!
   const lc = snap.launch
   const v = useStore((s) => (lc.vehicle != null ? s.vehicle(lc.vehicle) : s.selected))
+  const room = useStore((s) => !!s.snap?.room?.on)
+  const members = useStore((s) => s.snap?.room?.members)
+  const roles = useStore((s) => s.hello?.roles)
+  useStore((s) => s.me)
   if (!v) return <Empty>{t('Nenhum veículo na plataforma neste cenário.')}</Empty>
   const id = v.id
   const onPad = v.phase === 'prelaunch'
+  // Sala com posições: quem ocupa cada posição da votação e quais são desta tela.
+  const mine = room ? myLaunchPositions() : []
+  const staff = (lp: string) =>
+    (members ?? [])
+      .filter((m) => roles?.find((r) => r.id === m.position)?.launch.includes(lp))
+      .map((m) => `${m.name} (${m.position})`)
+      .join(', ')
+  const waitingMine = lc.positions.filter((p) => p.awaiting && mine.includes(p.id))
   return (
     <div className="grid">
       {lc.state === 'hold' && lc.hold_reason && <div className="banner warn">{t('Em espera')}: {tx(lc.hold_reason)}</div>}
       {lc.state === 'scrubbed' && <div className="banner alarm">{tx(lc.hold_reason) || t('Lançamento cancelado')}</div>}
+      {waitingMine.length > 0 && (
+        <div className="banner warn row vote-banner" role="alert">
+          <b>{t('Votação GO/NO-GO')}:</b> {waitingMine.map((p) => tx(p.name)).join(', ')} — {t('qual é o seu voto?')}
+          {waitingMine.map((p) => (
+            <span key={p.id} className="row">
+              <button className="primary" onClick={() => sendCommand(id, 'vote', { position: p.id, go: 'go' })}>
+                {tx(p.name)}: GO
+              </button>
+              <button className="danger" onClick={() => sendCommand(id, 'vote', { position: p.id, go: 'nogo' })}>
+                NO-GO
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="grid cols-3">
         <Panel title={`${t('Contagem')} · ${v.name}`}>
           <div className={`big-clock ${lc.state === 'hold' ? 'hold' : ''}`}>{onPad || lc.state !== 'launched' ? lc.clock : '—'}</div>
@@ -61,22 +89,36 @@ export function LaunchView() {
           <table>
             <tbody>
               {lc.positions.map((p) => (
-                <tr key={p.id}>
-                  <td>{tx(p.name)}</td>
+                <tr key={p.id} className={mine.includes(p.id) ? 'sel' : ''}>
                   <td>
-                    <span className={`pill ${p.go ? 'go' : 'nogo'}`}>{p.go ? 'GO' : 'NO-GO'}</span>
+                    {tx(p.name)}
+                    {staff(p.id) && <div className="small muted">{staff(p.id)}</div>}
+                  </td>
+                  <td>
+                    {p.awaiting ? <span className="pill pending">{t('aguardando voto')}</span> : <span className={`pill ${p.go ? 'go' : 'nogo'}`}>{p.go ? 'GO' : 'NO-GO'}</span>}
                     {p.polled != null && <span className="muted small"> · {t('votou')} {p.polled ? 'GO' : 'NO-GO'}</span>}
                   </td>
                   <td>
+                    {room && mine.includes(p.id) ? (
+                      <span className="row">
+                        <button className="small" disabled={!onPad} onClick={() => sendCommand(id, 'vote', { position: p.id, go: 'go' })}>
+                          GO
+                        </button>
+                        <button className="small danger" disabled={!onPad} onClick={() => sendCommand(id, 'vote', { position: p.id, go: 'nogo' })}>
+                          NO-GO
+                        </button>
+                      </span>
+                    ) : (
                     <select
                       value={p.manual == null ? 'auto' : p.manual ? 'go' : 'nogo'}
                       onChange={(e) => sendCommand(id, 'position', { position: p.id, go: e.target.value })}
-                      disabled={!onPad}
+                      disabled={!onPad || !canVote(p.id)}
                     >
                       <option value="auto">{t('automático')}</option>
                       <option value="go">GO</option>
                       <option value="nogo">NO-GO</option>
                     </select>
+                    )}
                   </td>
                 </tr>
               ))}

@@ -146,6 +146,21 @@ gráficos e nas gravações como os simulados, com as passagens nas estações e
 sem comandos. A idade do TLE vira um ponto de telemetria com alarme (o erro cresce alguns km por
 dia). A lista fica em `satelites.tle`, ao lado dos estados salvos, e continua ao trocar de cenário.
 
+## Sala de controle com várias pessoas
+
+Com `jaci --room` (ou "Sala com posições" no console **Instrutor**), cada tela entra numa posição —
+FLIGHT, LCC, BOOSTER, FIDO, GNC, EECOM, INCO, PAYLOAD, RSO, METEO, CAPCOM, SURGEON, SIM
+(instrutor) ou OBS (observador) — pelo crachá na barra de cima, e só comanda o que é dela: o FLIGHT
+comanda tudo; cada posição, os grupos de comando da sua área (o RSO a terminação de voo, a EECOM
+energia, térmico e suporte de vida, o FIDO manobras e o planejador…); o instrutor só mexe no
+simulador; o observador só acompanha. O servidor confere cada mensagem e a interface apaga o que
+não é da posição. Na votação GO/NO-GO, as posições do lançamento ocupadas por pessoas esperam o voto
+delas (a tela de cada uma pede o voto); as outras respondem sozinhas pelos critérios. Os loops 💬
+são canais de texto — o geral e um por posição — que entram no registro de eventos, nas gravações e
+na reprodução; chamada no loop da sua posição toca dois bipes (com o som ligado). Sem a sala
+ligada, toda tela comanda tudo, como antes. As posições não têm senha: quem entra na sala é quem tem
+o endereço (e o token, na rede).
+
 ## Treino
 
 No console **Instrutor**, além de injetar falhas na hora (avisando a equipe ou não), dá para

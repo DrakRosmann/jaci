@@ -37,12 +37,18 @@ pub fn hello(a: &mut App) -> String {
         "bodies": Body::ALL.iter().map(|b| json!({"id": b.id(), "name": b.name(), "radius": b.radius(), "parent": b.parent().map(|p| p.id()), "soi": num(b.soi())})).collect::<Vec<_>>(),
         "events": events,
         "dictionary": dictionary_map(a),
+        "roles": crate::room::roles_json(),
     })
     .to_string()
 }
 
 fn event(e: &jaci_sim::vehicle::Event) -> Value {
-    json!({"t": e.t, "vehicle": e.vehicle, "level": format!("{:?}", e.level).to_lowercase(), "text": e.text})
+    let mut v = json!({"t": e.t, "vehicle": e.vehicle, "level": format!("{:?}", e.level).to_lowercase(), "text": e.text});
+    if let Some(f) = &e.from {
+        v["from"] = json!(f);
+        v["channel"] = json!(e.channel);
+    }
+    v
 }
 
 fn dictionary_map(a: &App) -> Value {
@@ -295,7 +301,7 @@ pub fn snapshot_value(a: &App, since: u64) -> Value {
         "clock": format_met(-lc.t_minus),
         "hold_reason": lc.hold_reason,
         "sequence": lc.sequence,
-        "positions": lc.positions.iter().map(|p| json!({"id": p.id, "name": p.name, "go": p.go(), "manual": p.manual, "reason": p.reason, "polled": p.polled})).collect::<Vec<_>>(),
+        "positions": lc.positions.iter().map(|p| json!({"id": p.id, "name": p.name, "go": p.go(), "manual": p.manual, "reason": p.reason, "polled": p.polled, "awaiting": p.awaiting})).collect::<Vec<_>>(),
         "criteria": lc.criteria,
         "window": lc.window,
         "loading": lc.loading,
@@ -364,7 +370,15 @@ pub fn snapshot_value(a: &App, since: u64) -> Value {
         "stations_live": w.stations.iter().map(|s| json!({"id": s.id, "enabled": s.enabled})).collect::<Vec<_>>(),
         "ksp": ksp,
         "recording": a.recorder.as_ref().map(|r| r.status()),
+        "room": room(a),
     })
+}
+
+/// A sala: ligada ou não, e quem está em cada posição.
+fn room(a: &App) -> Value {
+    let mut members: Vec<&crate::room::Member> = a.members.values().collect();
+    members.sort_by(|x, y| (&x.position, &x.name).cmp(&(&y.position, &y.name)));
+    json!({"on": a.room, "members": members.iter().map(|m| json!({"name": m.name, "position": m.position})).collect::<Vec<_>>()})
 }
 
 /// Histórico de telemetria de um veículo: os nomes uma vez, os valores em f32.

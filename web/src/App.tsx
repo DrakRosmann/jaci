@@ -3,6 +3,7 @@ import { Toasts } from './components/ui'
 import { EventLog } from './components/EventLog'
 import { TopBar } from './components/TopBar'
 import { ReplayBar } from './components/ReplayBar'
+import { JoinDialog } from './components/Room'
 import { Shortcuts } from './components/Shortcuts'
 import { sound } from './lib/audio'
 import { t, tx } from './lib/i18n'
@@ -55,6 +56,12 @@ export default function App() {
   const collapsed = useStore((s) => s.ui.navCollapsed)
   const lang = useStore((s) => s.ui.lang)
   const [help, setHelp] = useState(false)
+  const [joinOpen, setJoin] = useState(false)
+  // Sala com posições ligada e esta tela sem posição: pergunta (até fecharem).
+  const roomOn = useStore((s) => !!s.snap?.room?.on)
+  const me = useStore((s) => s.me)
+  const [dismissed, setDismissed] = useState(false)
+  const join = joinOpen || (roomOn && !me && !dismissed)
   useTitle()
   useKeys(setHelp)
   useSound()
@@ -64,7 +71,7 @@ export default function App() {
   const Current = VIEWS[view]
   return (
     <div className="app">
-      <TopBar onHelp={() => setHelp(true)} />
+      <TopBar onHelp={() => setHelp(true)} onRoom={() => setJoin(true)} />
       <ReplayBar />
       <div className={`body ${collapsed ? 'collapsed' : ''}`}>
         <nav className="consoles" aria-label={t('Consoles')}>
@@ -106,6 +113,14 @@ export default function App() {
       <EventLog />
       <Toasts />
       {help && <Shortcuts onClose={() => setHelp(false)} />}
+      {join && (
+        <JoinDialog
+          onClose={() => {
+            setJoin(false)
+            setDismissed(true)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -173,7 +188,7 @@ function useSound() {
       }
       if (s === last) return
       last = s
-      sound.update(s, s.events, store.ui.lang, tx)
+      sound.update(s, s.events, store.ui.lang, tx, store.me?.position)
     })
     const unlock = () => sound.prefs.on && sound.unlock()
     window.addEventListener('pointerdown', unlock)

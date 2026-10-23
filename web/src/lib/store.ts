@@ -66,6 +66,8 @@ class Store {
   version = 0
   /** Quando chegou o último instantâneo (relógio do navegador, ms). */
   lastSnapAt = 0
+  /** Quem está nesta tela, na sala com posições (guardado no navegador). */
+  me: { name: string; position: string } | null = loadMe()
   private listeners = new Set<Listener>()
   private ws: WebSocket | null = null
   private reqId = 1
@@ -139,6 +141,8 @@ class Store {
         this.dictionary = d.dictionary
         this.events = d.events
         this.history.clear()
+        // Reconectou: volta para a mesma posição.
+        if (this.me) this.send({ type: 'join', name: this.me.name, position: this.me.position })
         break
       case 'dictionary':
         this.dictionary = d.dictionary
@@ -194,6 +198,26 @@ class Store {
     }
   }
 
+  /** Entra na sala numa posição (ou sai, com null). */
+  async join(me: { name: string; position: string } | null) {
+    const r = await this.request<{ ok: boolean; error?: string }>(me ? { type: 'join', ...me } : { type: 'leave' })
+    if (r.ok) {
+      this.me = me
+      try {
+        if (me) localStorage.setItem('jaci.me', JSON.stringify(me))
+        else localStorage.removeItem('jaci.me')
+      } catch {
+        /* sem armazenamento */
+      }
+      this.emit()
+    }
+    return r
+  }
+
+  chat(text: string, channel: string) {
+    return this.request<{ ok: boolean; error?: string }>({ type: 'chat', text, channel })
+  }
+
   /** Endereço do CSV da telemetria de um veículo (com a senha, se houver). */
   csvUrl(vehicle: number): string {
     const token = new URLSearchParams(location.search).get('token')
@@ -233,6 +257,15 @@ class Store {
 
   get selected(): Vehicle | undefined {
     return this.vehicle(this.ui.selected)
+  }
+}
+
+function loadMe(): { name: string; position: string } | null {
+  try {
+    const m = JSON.parse(localStorage.getItem('jaci.me') ?? 'null')
+    return m && typeof m.name === 'string' && typeof m.position === 'string' ? m : null
+  } catch {
+    return null
   }
 }
 

@@ -149,7 +149,7 @@ class Sound {
   }
 
   /** Olha o instantâneo novo e toca o que for preciso. */
-  update(snap: Snapshot, events: EventMsg[], lang: 'pt' | 'en', translate: (s: string) => string) {
+  update(snap: Snapshot, events: EventMsg[], lang: 'pt' | 'en', translate: (s: string) => string, myPosition?: string) {
     const p = this.prefs
     // Na primeira passada só aprende o estado (não toca o que já estava lá).
     const first = !this.primed
@@ -188,6 +188,11 @@ class Sound {
     }
     this.lastTMinus = counting || lc.state === 'launched' ? lc.t_minus : null
     this.lastCountState = lc.state
+    // Chamada no loop da minha posição: dois toques curtos.
+    if (!first && p.on && myPosition && events.some((e) => e.level === 'chat' && e.channel === myPosition && !e.from?.endsWith(`(${myPosition})`))) {
+      this.tone(1320, 0.07, 'sine', 0, 0.2)
+      this.tone(1760, 0.07, 'sine', 0.09, 0.2)
+    }
     // Eventos importantes (bons e alarmes vêm acima).
     if (!first && p.on && p.events) {
       for (const e of events) {

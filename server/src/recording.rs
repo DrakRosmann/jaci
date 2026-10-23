@@ -303,6 +303,7 @@ impl Replay {
     pub fn hello(&self) -> String {
         let mut h = self.hello.clone();
         h["events"] = json!(self.events_until(self.cursor));
+        h["roles"] = crate::room::roles_json();
         h["dictionary"] = self.dictionary_at(self.cursor);
         h["replay"] = self.info();
         h["replay"]["markers"] = json!(self.markers);

@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { t, tx } from '../lib/i18n'
 import { store, useStore } from '../lib/store'
 import { num } from '../lib/format'
+import { canCommand, myPosition } from '../lib/room'
 import type { TmDef, Vehicle } from '../types'
 
 export function Panel({ title, right, children, className, flush }: { title: ReactNode; right?: ReactNode; children: ReactNode; className?: string; flush?: boolean }) {
@@ -137,6 +138,8 @@ export function CmdButton({
   const def = useStore((s) => s.hello?.commands.find((c) => c.id === cmd))
   // Na reprodução de uma gravação não há o que comandar.
   const replay = useStore((s) => s.snap?.replay != null)
+  // Na sala com posições, só o que é da posição desta tela.
+  const allowed = useStore(() => canCommand(def, args?.position as string | undefined))
   const danger = hazardous ?? def?.hazardous ?? false
   const [armed, setArmed] = useState(false)
   useEffect(() => {
@@ -154,7 +157,7 @@ export function CmdButton({
     await sendCommand(vehicle, cmd, args, { armed: danger })
   }
   return (
-    <button className={`${className ?? ''} ${armed ? 'armed' : ''} ${danger && !armed ? 'danger' : ''}`} disabled={disabled || replay || vehicle == null} onClick={click} title={replay ? t('Reprodução: comandos desligados') : (title ?? tx(def?.description))}>
+    <button className={`${className ?? ''} ${armed ? 'armed' : ''} ${danger && !armed ? 'danger' : ''}`} disabled={disabled || replay || !allowed || vehicle == null} onClick={click} title={replay ? t('Reprodução: comandos desligados') : !allowed ? t('{pos} não comanda {group}', { pos: myPosition() ?? '', group: tx(def?.group) }) : (title ?? tx(def?.description))}>
       {armed ? t('CONFIRMAR') : children}
     </button>
   )

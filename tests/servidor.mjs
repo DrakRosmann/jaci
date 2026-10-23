@@ -379,6 +379,57 @@ const cases = [
     },
   ],
   [
+    'sala: posições, permissões, votação por pessoas e loops',
+    async () => {
+      const s = await server('sondagem', ['--room'])
+      const others = []
+      try {
+        const flight = s.ws
+        const meteo = await connect(s.port)
+        const obs = await connect(s.port)
+        others.push(meteo, obs)
+        const snap = await until(flight, 'instantâneo', (x) => x.room?.on)
+        assert(flight.hello.roles.some((r) => r.id === 'RSO'), 'papéis na saudação')
+        const id = snap.launch.vehicle
+        const j1 = await flight.request({ type: 'join', name: 'Ana', position: 'FLIGHT' })
+        const j2 = await meteo.request({ type: 'join', name: 'Bia', position: 'METEO' })
+        assert(j1.ok && j2.ok, 'entrar na sala')
+        assert(!(await flight.request({ type: 'join', name: 'X', position: 'NAO' })).ok, 'posição inexistente aceita')
+        // Observador e meteorologia não comandam a contagem; o FLIGHT sim.
+        const count = { type: 'command', vehicle: id, cmd: { id: 'count_start', args: { t_minus: 120 } } }
+        assert(!(await obs.request(count)).ok, 'observador comandou')
+        const r2 = await meteo.request(count)
+        assert(!r2.ok && /METEO/.test(r2.error), `meteorologia comandou: ${r2.error}`)
+        assert((await flight.request(count)).ok, 'FLIGHT não comandou')
+        // Votação: a meteorologia tem gente, então espera o voto.
+        assert((await flight.request({ type: 'command', vehicle: id, cmd: { id: 'poll', args: {} } })).ok, 'votação')
+        await until(flight, 'meteorologia aguardando', (x) => x.launch.positions.find((p) => p.id === 'wx')?.awaiting)
+        assert(!(await obs.request({ type: 'command', vehicle: id, cmd: { id: 'vote', args: { position: 'wx', go: 'go' } } })).ok, 'observador votou')
+        assert(!(await meteo.request({ type: 'command', vehicle: id, cmd: { id: 'vote', args: { position: 'rso', go: 'go' } } })).ok, 'votou por outra posição')
+        const v = await meteo.request({ type: 'command', vehicle: id, cmd: { id: 'vote', args: { position: 'wx', go: 'go' } } })
+        assert(v.ok, `voto: ${v.error}`)
+        await until(flight, 'voto registrado', (x) => { const p = x.launch.positions.find((p) => p.id === 'wx'); return !p.awaiting && p.polled === true })
+        // Loops.
+        assert((await meteo.request({ type: 'chat', text: 'Tempo bom para o lançamento', channel: 'geral' })).ok, 'falar')
+        assert(!(await obs.request({ type: 'chat', text: 'oi', channel: 'geral' })).ok, 'observador falou')
+        await until(flight, 'mensagem no loop', () => flight.events.some((e) => e.level === 'chat' && e.from === 'Bia (METEO)' && e.text.startsWith('Tempo bom')))
+        // Simulador: só o instrutor muda cenário; o FLIGHT acelera o tempo.
+        assert(!(await flight.request({ type: 'sim', action: 'scenario', value: 'vlm' })).ok, 'FLIGHT trocou cenário')
+        assert(!(await meteo.request({ type: 'sim', action: 'warp', value: 10 })).ok, 'meteorologia acelerou')
+        assert((await flight.request({ type: 'sim', action: 'warp', value: 1 })).ok, 'FLIGHT não acelerou')
+        // Quem sai some da sala.
+        meteo.close()
+        await until(flight, 'saída', (x) => x.room.members.length === 1)
+        // Sala desligada: qualquer tela comanda.
+        assert((await flight.request({ type: 'sim', action: 'room_mode', value: false })).ok, 'desligar a sala')
+        assert((await obs.request({ type: 'command', vehicle: id, cmd: { id: 'count_hold', args: {} } })).ok, 'sala desligada ainda bloqueia')
+      } finally {
+        others.forEach((c) => c.close())
+        s.close()
+      }
+    },
+  ],
+  [
     'marte: porkchop',
     async () => {
       const s = await server('marte')

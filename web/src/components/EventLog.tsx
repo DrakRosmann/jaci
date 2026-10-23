@@ -57,8 +57,8 @@ export function EventLog() {
           {shown.map((e) => (
             <div key={keyOf(e)} className={`ev ${e.level}`}>
               <span className="muted">{utc(e.t)}</span>
-              <span className="who">{name(e.vehicle)}</span>
-              <span className="txt">{tx(e.text)}</span>
+              <span className="who">{e.level === 'chat' ? e.from : name(e.vehicle)}</span>
+              <span className="txt">{e.level === 'chat' ? `${e.channel !== 'geral' ? `→ ${e.channel}: ` : ''}${e.text}` : tx(e.text)}</span>
             </div>
           ))}
         </div>

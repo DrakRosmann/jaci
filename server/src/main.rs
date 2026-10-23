@@ -4,6 +4,7 @@
 
 mod ksp;
 mod recording;
+mod room;
 mod snapshot;
 
 use anyhow::Context;
@@ -87,6 +88,10 @@ struct Args {
     /// Pasta das gravações (padrão: ao lado da pasta dos estados salvos).
     #[arg(long)]
     recordings_dir: Option<PathBuf>,
+    /// Sala com posições: cada tela entra numa (FLIGHT, FIDO, EECOM, …) e só
+    /// comanda o que é dela. Também se liga pelo console do instrutor.
+    #[arg(long)]
+    room: bool,
 }
 
 pub struct App {
@@ -112,6 +117,11 @@ pub struct App {
     pub recorder: Option<recording::Recorder>,
     /// Reprodução de uma gravação: a simulação fica parada enquanto isso.
     pub replay: Option<recording::Replay>,
+    /// Sala com posições e permissões.
+    pub room: bool,
+    /// Quem está em qual posição, por conexão.
+    pub members: HashMap<u64, room::Member>,
+    pub next_conn: u64,
 }
 
 impl App {
@@ -137,6 +147,46 @@ impl App {
         Ok(msg)
     }
 
+    /// Passa ao controle de lançamento quais posições da votação têm gente.
+    fn sync_staffed(&mut self) {
+        let ids: Vec<String> = if self.room {
+            let mut v: Vec<String> = self.members.values().filter_map(|m| room::role(&m.position)).flat_map(|r| r.launch.iter().map(|s| s.to_string())).collect();
+            v.sort();
+            v.dedup();
+            v
+        } else {
+            vec![]
+        };
+        self.world.launch.set_staffed(ids);
+    }
+
+    /// Na sala com posições, confere se quem mandou a mensagem pode.
+    fn check(&self, conn: u64, msg: &Value) -> Result<(), String> {
+        if !self.room {
+            return Ok(());
+        }
+        let position = self.members.get(&conn).map_or("OBS", |m| m.position.as_str());
+        let kind = msg.get("type").and_then(|x| x.as_str()).unwrap_or("");
+        match kind {
+            "chat" if position == "OBS" => Err("observador não fala nos loops".into()),
+            "plan" | "plan_apply" if !matches!(position, "FLIGHT" | "FIDO") => Err(format!("{position} não aplica planos de manobra (FIDO ou FLIGHT)")),
+            "command" => {
+                let id = msg.pointer("/cmd/id").and_then(|x| x.as_str()).unwrap_or("");
+                if id == "vote" || id == "position" {
+                    let lp = msg.pointer("/cmd/args/position").and_then(|x| x.as_str()).unwrap_or("");
+                    return if room::can_vote(position, lp) { Ok(()) } else { Err(format!("{position} não vota pela posição {lp}")) };
+                }
+                let group = jaci_sim::commands::dictionary().into_iter().chain(ksp::commands()).find(|c| c.id == id).map_or("", |c| c.group);
+                if room::can_command(position, group) { Ok(()) } else { Err(format!("{position} não comanda {group}")) }
+            }
+            "sim" => {
+                let action = msg.get("action").and_then(|x| x.as_str()).unwrap_or("");
+                if room::can_sim(position, action) { Ok(()) } else { Err(format!("{position} não pode pedir isso ao simulador ({action})")) }
+            }
+            _ => Ok(()),
+        }
+    }
+
     /// Guarda a lista de satélites reais.
     fn save_satellites(&self) {
         if let Some(dir) = self.satellites_file.parent() {
@@ -156,6 +206,7 @@ impl App {
             let _ = self.world.track(Some(&s.name), &s.line1, &s.line2);
         }
         self.sent_events = self.world.event_seq;
+        self.sync_staffed();
     }
 
     /// Termina a gravação em andamento, se houver.
@@ -282,6 +333,9 @@ async fn main() -> anyhow::Result<()> {
         recordings_dir: recordings_dir(&args, &states),
         recorder: None,
         replay: None,
+        room: args.room,
+        members: HashMap::new(),
+        next_conn: 0,
         states_dir: states,
         sent_events: 0,
         dict_sig: String::new(),
@@ -521,12 +575,14 @@ async fn csv_handler(Query(q): Query<HashMap<String, String>>, State(ctx): State
 
 async fn client(socket: WebSocket, ctx: Ctx) {
     let (mut sink, mut stream) = socket.split();
-    let (hello, history, frame) = {
+    let (conn, hello, history, frame) = {
         let mut a = ctx.app.lock().unwrap();
+        a.next_conn += 1;
+        let conn = a.next_conn;
         match a.replay.as_mut() {
             // Na reprodução, o quadro atual vai junto: parada, ela não manda outro.
-            Some(rp) => (rp.hello(), rp.history(), Some(rp.current())),
-            None => (snapshot::hello(&mut a), snapshot::history(&a), None),
+            Some(rp) => (conn, rp.hello(), rp.history(), Some(rp.current())),
+            None => (conn, snapshot::hello(&mut a), snapshot::history(&a), None),
         }
     };
     for m in [Some(hello), Some(history), frame].into_iter().flatten() {
@@ -554,7 +610,7 @@ async fn client(socket: WebSocket, ctx: Ctx) {
     while let Some(Ok(msg)) = stream.next().await {
         let Message::Text(text) = msg else { continue };
         let Ok(v) = serde_json::from_str::<Value>(&text) else { continue };
-        let reply = handle(&ctx, &v);
+        let reply = handle(&ctx, conn, &v);
         if let Some(r) = reply {
             if reply_tx.send(r.to_string()).is_err() {
                 break;
@@ -562,6 +618,14 @@ async fn client(socket: WebSocket, ctx: Ctx) {
         }
     }
     writer.abort();
+    // Saiu da sala.
+    let mut a = ctx.app.lock().unwrap();
+    if let Some(m) = a.members.remove(&conn) {
+        if a.replay.is_none() {
+            a.world.event(None, jaci_sim::vehicle::Level::Info, format!("{} saiu da sala", m.label()));
+        }
+        a.sync_staffed();
+    }
 }
 
 /// Ações do Instrutor durante a reprodução: controlam a reprodução. Devolve a
@@ -610,10 +674,59 @@ fn vid(v: &Value) -> u32 {
 }
 
 /// Trata uma mensagem da interface; devolve a resposta (só para quem pediu).
-fn handle(ctx: &Ctx, msg: &Value) -> Option<Value> {
+fn handle(ctx: &Ctx, conn: u64, msg: &Value) -> Option<Value> {
     let kind = msg.get("type")?.as_str()?;
     let req = msg.get("req").cloned().unwrap_or(Value::Null);
     let mut a = ctx.app.lock().unwrap();
+    if let Err(e) = a.check(conn, msg) {
+        let reply = match kind {
+            "command" => "command_result",
+            "sim" => "sim_result",
+            "plan_apply" => "plan_applied",
+            "chat" => "chat_result",
+            k => k,
+        };
+        return Some(json!({"type": reply, "req": req, "ok": false, "error": e}));
+    }
+    // Entrar na sala, sair e falar nos loops.
+    match kind {
+        "join" => {
+            let name = room::clean(msg.get("name").and_then(|x| x.as_str()).unwrap_or(""), 40);
+            let position = msg.get("position").and_then(|x| x.as_str()).unwrap_or("OBS");
+            if name.is_empty() || room::role(position).is_none() {
+                return Some(json!({"type": "joined", "req": req, "ok": false, "error": "nome e posição"}));
+            }
+            let m = room::Member { name, position: position.to_string() };
+            let changed = a.members.get(&conn).is_none_or(|old| old.position != m.position || old.name != m.name);
+            if changed && a.replay.is_none() {
+                a.world.event(None, jaci_sim::vehicle::Level::Info, format!("{} entrou na sala", m.label()));
+            }
+            a.members.insert(conn, m.clone());
+            a.sync_staffed();
+            return Some(json!({"type": "joined", "req": req, "ok": true, "name": m.name, "position": m.position}));
+        }
+        "leave" => {
+            if let Some(m) = a.members.remove(&conn) {
+                a.world.event(None, jaci_sim::vehicle::Level::Info, format!("{} saiu da sala", m.label()));
+                a.sync_staffed();
+            }
+            return Some(json!({"type": "joined", "req": req, "ok": true, "position": null}));
+        }
+        "chat" => {
+            if a.replay.is_some() {
+                return Some(json!({"type": "chat_result", "req": req, "ok": false, "error": "em reprodução"}));
+            }
+            let text = room::clean(msg.get("text").and_then(|x| x.as_str()).unwrap_or(""), 500);
+            let channel = room::clean(msg.get("channel").and_then(|x| x.as_str()).unwrap_or("geral"), 20);
+            if text.is_empty() {
+                return Some(json!({"type": "chat_result", "req": req, "ok": false, "error": "mensagem vazia"}));
+            }
+            let from = a.members.get(&conn).map_or_else(|| "Console".to_string(), |m| m.label());
+            a.world.chat(&from, if channel.is_empty() { "geral" } else { &channel }, &text);
+            return Some(json!({"type": "chat_result", "req": req, "ok": true}));
+        }
+        _ => {}
+    }
     // Na reprodução não há o que comandar; o traço previsto vem do estado gravado.
     if let Some(rp) = a.replay.as_mut() {
         match kind {
@@ -998,6 +1111,13 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
             } else {
                 json!({"type": "sim_result", "req": req, "ok": false, "error": "satélite não encontrado"})
             }
+        }
+        "room_mode" => {
+            a.room = msg.get("value").and_then(|x| x.as_bool()).unwrap_or(!a.room);
+            a.sync_staffed();
+            let m = if a.room { "Sala com posições ligada: cada tela entra numa posição" } else { "Sala com posições desligada: todas as telas comandam tudo" };
+            a.world.event(None, jaci_sim::vehicle::Level::Info, m);
+            json!({"type": "sim_result", "req": req, "ok": true, "message": m})
         }
         "record_start" => match a.start_recording(msg.get("value").and_then(|x| x.as_str())) {
             Ok(m) => json!({"type": "sim_result", "req": req, "ok": true, "message": m}),

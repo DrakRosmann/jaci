@@ -97,6 +97,9 @@ pub struct Position {
     pub reason: Option<String>,
     /// Resposta na última votação.
     pub polled: Option<bool>,
+    /// Ocupada por uma pessoa e ainda sem resposta na votação em curso.
+    #[serde(default)]
+    pub awaiting: bool,
 }
 
 impl Position {
@@ -139,6 +142,9 @@ pub struct LaunchControl {
     pub auto_sequence: bool,
     /// Limite de vento de superfície (m/s).
     pub wind_limit: f64,
+    /// Posições do lançamento ocupadas por pessoas (sala de controle): votam elas mesmas.
+    #[serde(default)]
+    pub staffed: Vec<String>,
 }
 
 pub const POSITIONS: [(&str, &str); 11] = [
@@ -174,6 +180,7 @@ impl Default for LaunchControl {
             internal_power: false,
             auto_sequence: false,
             wind_limit: 15.0,
+            staffed: vec![],
         }
     }
 }
@@ -241,7 +248,7 @@ impl LaunchControl {
         self.positions = POSITIONS
             .iter()
             .filter(|(id, _)| crewed || (*id != "crew" && *id != "surg"))
-            .map(|(id, name)| Position { id: (*id).into(), name: (*name).into(), manual: None, reason: None, polled: None })
+            .map(|(id, name)| Position { id: (*id).into(), name: (*name).into(), manual: None, reason: None, polled: None, awaiting: false })
             .collect();
     }
 
@@ -305,13 +312,21 @@ impl LaunchControl {
     }
 
     pub fn all_go(&self) -> bool {
-        self.positions.iter().all(|p| p.go())
+        self.positions.iter().all(|p| p.go() && !p.awaiting)
     }
 
-    /// Votação: cada posição responde.
+    /// Votação: cada posição responde. As ocupadas por pessoas (`staffed`)
+    /// ficam esperando o voto delas (comando "vote").
     pub fn poll(&mut self) -> Vec<(Level, String)> {
         let mut ev = vec![(Level::Info, "Votação GO/NO-GO para o lançamento".to_string())];
+        let mut waiting = Vec::new();
         for p in &mut self.positions {
+            if self.staffed.contains(&p.id) {
+                p.polled = None;
+                p.awaiting = true;
+                waiting.push(p.name.clone());
+                continue;
+            }
             let go = p.go();
             p.polled = Some(go);
             ev.push((
@@ -319,9 +334,44 @@ impl LaunchControl {
                 format!("{}: {}{}", p.name, if go { "GO" } else { "NO-GO" }, p.reason.as_ref().map(|r| format!(" ({r})")).unwrap_or_default()),
             ));
         }
-        let all = self.all_go();
-        ev.push((if all { Level::Good } else { Level::Warn }, if all { "Todas as posições GO para o lançamento".into() } else { "Lançamento NO-GO".into() }));
+        if waiting.is_empty() {
+            ev.push(self.poll_summary());
+        } else {
+            ev.push((Level::Info, format!("Aguardando o voto de: {}", waiting.join(", "))));
+        }
         ev
+    }
+
+    fn poll_summary(&self) -> (Level, String) {
+        let all = self.all_go();
+        (if all { Level::Good } else { Level::Warn }, if all { "Todas as posições GO para o lançamento".into() } else { "Lançamento NO-GO".into() })
+    }
+
+    /// Voto de uma posição ocupada por uma pessoa. Vale também fora da
+    /// votação: a posição fica GO ou NO-GO até o próximo voto.
+    pub fn vote(&mut self, id: &str, go: bool) -> Result<Vec<(Level, String)>, String> {
+        let p = self.positions.iter_mut().find(|p| p.id == id).ok_or("posição desconhecida")?;
+        let was_awaiting = p.awaiting;
+        p.manual = Some(go);
+        p.polled = Some(go);
+        p.awaiting = false;
+        let mut ev = vec![(if go { Level::Good } else { Level::Warn }, format!("{}: {}", p.name, if go { "GO" } else { "NO-GO" }))];
+        if was_awaiting && !self.positions.iter().any(|p| p.awaiting) {
+            ev.push(self.poll_summary());
+        }
+        Ok(ev)
+    }
+
+    /// Quais posições do lançamento têm uma pessoa. Quem sai no meio da
+    /// votação deixa a posição responder sozinha.
+    pub fn set_staffed(&mut self, ids: Vec<String>) {
+        for p in &mut self.positions {
+            if p.awaiting && !ids.contains(&p.id) {
+                p.awaiting = false;
+                p.polled = Some(p.go());
+            }
+        }
+        self.staffed = ids;
     }
 
     pub fn hold(&mut self, reason: &str) {
@@ -344,6 +394,7 @@ impl LaunchControl {
         }
         for p in &mut self.positions {
             p.polled = None;
+            p.awaiting = false;
         }
     }
 
@@ -495,6 +546,45 @@ pub fn plane_crossings(site: &Site, normal: Vec3, t0: f64, span: f64, northbound
         t = t1;
     }
     out
+}
+
+#[cfg(test)]
+mod tests_votacao {
+    use super::*;
+
+    fn lc() -> LaunchControl {
+        let mut lc = LaunchControl::default();
+        lc.positions = POSITIONS.iter().map(|(id, name)| Position { id: (*id).into(), name: (*name).into(), manual: None, reason: None, polled: None, awaiting: false }).collect();
+        lc
+    }
+
+    #[test]
+    fn pessoas_votam_e_a_votacao_espera() {
+        let mut lc = lc();
+        lc.set_staffed(vec!["wx".into(), "rso".into()]);
+        let ev = lc.poll();
+        assert!(ev.last().unwrap().1.contains("Meteorologia"));
+        assert!(!lc.all_go(), "GO sem os votos");
+        let ev = lc.vote("wx", true).unwrap();
+        assert_eq!(ev.len(), 1);
+        let ev = lc.vote("rso", true).unwrap();
+        // O último voto fecha a votação.
+        assert_eq!(ev.last().unwrap().1, "Todas as posições GO para o lançamento");
+        assert!(lc.all_go());
+        lc.vote("wx", false).unwrap();
+        assert!(!lc.all_go());
+    }
+
+    #[test]
+    fn quem_sai_deixa_a_posicao_responder() {
+        let mut lc = lc();
+        lc.set_staffed(vec!["wx".into()]);
+        lc.poll();
+        assert!(lc.positions.iter().any(|p| p.awaiting));
+        lc.set_staffed(vec![]);
+        assert!(lc.all_go());
+        assert!(lc.vote("xx", true).is_err());
+    }
 }
 
 #[cfg(test)]

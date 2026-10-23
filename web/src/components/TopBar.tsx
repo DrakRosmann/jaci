@@ -1,10 +1,13 @@
+import { useState } from 'react'
 import { t, tx } from '../lib/i18n'
 import { kerbinTime, met } from '../lib/format'
 import { WARPS } from '../lib/consoles'
 import { SoundMenu } from './SoundMenu'
+import { ChatDock, RoomChip } from './Room'
 import { store, useStore } from '../lib/store'
 
-export function TopBar({ onHelp }: { onHelp: () => void }) {
+export function TopBar({ onHelp, onRoom }: { onHelp: () => void; onRoom: () => void }) {
+  const [chat, setChat] = useState(false)
   const snap = useStore((s) => s.snap)
   const connected = useStore((s) => s.connected)
   const lang = useStore((s) => s.ui.lang)
@@ -88,6 +91,8 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
       <button className={`small ${alarms.length ? (red ? 'danger' : '') : ''}`} onClick={() => store.setUi({ view: 'telemetry' })} title={t('Alarmes não reconhecidos')}>
         <span className={`dot ${alarms.length ? (red ? 'bad' : 'warn') : 'good'}`} /> {alarms.length} {t('alarmes')}
       </button>
+      <RoomChip onOpen={onRoom} />
+      <ChatDock open={chat} onToggle={() => setChat(!chat)} />
       <SoundMenu />
       <span title={connected ? t('Conectado') : t('Sem conexão')} role="status" aria-label={connected ? t('Conectado') : t('Sem conexão')}>
         <span className={`dot ${connected ? 'good' : 'bad'}`} />

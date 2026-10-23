@@ -246,7 +246,7 @@ impl World {
     }
 
     pub fn event(&mut self, vehicle: Option<VehicleId>, level: Level, text: impl Into<String>) {
-        self.events.push(Event { t: self.t, vehicle, level, text: text.into() });
+        self.events.push(Event { t: self.t, vehicle, level, text: text.into(), from: None, channel: None });
         self.event_seq += 1;
         if self.events.len() > 3_000 {
             self.events.drain(..500);
@@ -254,6 +254,15 @@ impl World {
         if level == Level::Alarm && self.warp_stop && self.warp > 1.0 {
             self.warp = 1.0;
             self.last_slow = self.t;
+        }
+    }
+
+    /// Mensagem num loop da sala de controle (entra no registro, nas gravações e na reprodução).
+    pub fn chat(&mut self, from: &str, channel: &str, text: &str) {
+        self.events.push(Event { t: self.t, vehicle: None, level: Level::Chat, text: text.into(), from: Some(from.into()), channel: Some(channel.into()) });
+        self.event_seq += 1;
+        if self.events.len() > 3_000 {
+            self.events.drain(..500);
         }
     }
 
@@ -749,6 +758,19 @@ impl World {
                     self.event(Some(vid), l, txt);
                 }
                 if self.launch.all_go() { "GO".into() } else { "NO-GO".into() }
+            }
+            "vote" => {
+                let p = cmd.str("position").ok_or("falta a posição")?.to_string();
+                let go = match cmd.str("go") {
+                    Some("go") => true,
+                    Some("nogo") => false,
+                    _ => return Err("voto: go ou nogo".into()),
+                };
+                let ev = self.launch.vote(&p, go)?;
+                for (l, txt) in ev {
+                    self.event(Some(vid), l, txt);
+                }
+                if go { "GO".into() } else { "NO-GO".into() }
             }
             "position" => {
                 let p = cmd.str("position").ok_or("falta a posição")?.to_string();

@@ -35,8 +35,20 @@ executam depois do atraso da luz; os de solo (`ground`) executam na hora. Respos
 | `predict` | `vehicle`, `span` (s), `step` (s) | `predict`: pontos `[t, lat, lon, alt_km, x, y, z]` |
 | `passes` | `vehicle`, `span` (s) | `passes`: estação, AOS, LOS, elevação máxima |
 | `porkchop` | `from`, `to`, `start` (UTC), `span_days`, `tof_min`, `tof_max`, `n` | `porkchop`: datas, durações, C3 e v∞ de chegada, melhor ponto |
-| `sim` | `action`: `warp` (`value`), `pause`, `resume`, `warp_stop`, `scenario` (`value`, `start`), `save` (`value`), `saves`, `load` (`value`), `weather` (`surface_wind`, `wind_from`, `jet_wind`, `lightning_km`, `ceiling_m`, `rain`, `evolve`), `fault` (`vehicle`, `fault`, `arg`), `clear_faults`, `ack` (`value`: id do alarme, ou todos), `station` (`id`, `enabled`), `remove_debris`, `ksp_connect` (`value`: pasta do KSP, ou vazio para procurar), `ksp_patch`, `record_start` (`value`: nome, ou automático), `record_stop`, `recordings`, `replay_start` (`value`: nome), `replay_control` (`playing`, `speed`, `seek`: número do quadro), `replay_stop`, `track` (`value`: texto com TLEs, duas ou três linhas por satélite), `untrack` (`vehicle`), `plan_fault` (`vehicle`, `fault` ou `random`, `arg`, `when`: `in`/`met`/`at`, `value` em s ou `at` em UTC, `window` em s, `probability` de 0 a 1, `announce`), `unplan_fault` (`id`), `fault_plan`, `report`, `report_reset`, `proc_log` (`vehicle`, `procedure`, `kind`: `start`/`step`/`done`, `step`, `total`); `fault` aceita também `announce` (padrão: sim) | `sim_result`, `saves`, `recordings`, `fault_plan`, `report` ou `reload` |
+| `sim` | `action`: `warp` (`value`), `pause`, `resume`, `warp_stop`, `scenario` (`value`, `start`), `save` (`value`), `saves`, `load` (`value`), `weather` (`surface_wind`, `wind_from`, `jet_wind`, `lightning_km`, `ceiling_m`, `rain`, `evolve`), `fault` (`vehicle`, `fault`, `arg`), `clear_faults`, `ack` (`value`: id do alarme, ou todos), `station` (`id`, `enabled`), `remove_debris`, `ksp_connect` (`value`: pasta do KSP, ou vazio para procurar), `ksp_patch`, `record_start` (`value`: nome, ou automático), `record_stop`, `recordings`, `replay_start` (`value`: nome), `replay_control` (`playing`, `speed`, `seek`: número do quadro), `replay_stop`, `room_mode` (`value`), `track` (`value`: texto com TLEs, duas ou três linhas por satélite), `untrack` (`vehicle`), `plan_fault` (`vehicle`, `fault` ou `random`, `arg`, `when`: `in`/`met`/`at`, `value` em s ou `at` em UTC, `window` em s, `probability` de 0 a 1, `announce`), `unplan_fault` (`id`), `fault_plan`, `report`, `report_reset`, `proc_log` (`vehicle`, `procedure`, `kind`: `start`/`step`/`done`, `step`, `total`); `fault` aceita também `announce` (padrão: sim) | `sim_result`, `saves`, `recordings`, `fault_plan`, `report` ou `reload` |
 | `dictionary` | — | `dictionary` |
+| `join` | `name`, `position` (id de um dos `roles` da saudação) | `joined` |
+| `leave` | — | `joined` (`position`: null) |
+| `chat` | `text`, `channel` (`geral` ou o id de uma posição) | `chat_result`; a mensagem chega a todos como evento `"level": "chat"` com `from` e `channel` |
+
+### Sala com posições
+
+A saudação traz `roles`: cada posição com `id`, `name`, `description`, os grupos de comando que
+comanda (`groups`, `*` = todos), as posições da votação do lançamento que ocupa (`launch`) e as ações
+do simulador que pede (`sim`). O instantâneo traz `room` (`on`, `members`: `name` e `position`).
+Com a sala ligada, mensagens fora da posição voltam com `ok: false` e o motivo; sem posição, a tela
+é observadora. Na contagem, `launch.positions[].awaiting` marca as posições com gente que ainda não
+votaram; o comando `vote` (`position`, `go`: `go`/`nogo`) é o voto delas.
 
 ### Satélites reais
 

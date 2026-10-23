@@ -582,6 +582,8 @@ pub enum Level {
     Good,
     Warn,
     Alarm,
+    /// Conversa nos loops da sala de controle.
+    Chat,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -590,6 +592,12 @@ pub struct Event {
     pub vehicle: Option<VehicleId>,
     pub level: Level,
     pub text: String,
+    /// Conversa: quem falou ("Ana (EECOM)").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+    /// Conversa: o loop ("geral" ou o código de uma posição).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel: Option<String>,
 }
 
 /// O que sai de um passo além do próprio veículo: eventos e pedaços largados.

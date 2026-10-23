@@ -87,6 +87,7 @@ export function Instructor() {
           </tbody>
         </table>
       </Panel>
+      <RoomPanel />
       <Recordings />
       <Panel title={t('Injeção de falhas')}>
         <div className="form">
@@ -251,4 +252,34 @@ function Recordings() {
 
 function bytes(n: number): string {
   return n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} kB`
+}
+
+/** Sala com posições: ligar e ver quem está em cada posição. */
+function RoomPanel() {
+  const room = useStore((s) => s.snap?.room)
+  const roles = useStore((s) => s.hello?.roles ?? [])
+  const result = (r: { ok?: boolean; error?: string; message?: string }) => toast(r.ok === false ? tx(r.error) : tx(r.message) || t('feito'), r.ok === false ? 'bad' : 'good')
+  return (
+    <Panel title={t('Sala com posições')}>
+      <label>
+        <input type="checkbox" checked={!!room?.on} onChange={(e) => store.sim('room_mode', { value: e.target.checked }).then(result)} /> {t('cada tela entra numa posição e só comanda o que é dela')}
+      </label>
+      <p className="small muted">{t('FLIGHT comanda tudo; cada posição comanda os grupos dela (RSO a terminação de voo, EECOM energia e suporte de vida…); as posições do lançamento ocupadas por pessoas votam elas mesmas; o instrutor só mexe no simulador; o observador só olha.')}</p>
+      {room && room.members.length > 0 ? (
+        <table>
+          <tbody>
+            {room.members.map((m, i) => (
+              <tr key={i}>
+                <td className="mono">{m.position}</td>
+                <td>{m.name}</td>
+                <td className="small muted">{tx(roles.find((r) => r.id === m.position)?.name ?? '')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="small muted">{t('Ninguém entrou numa posição ainda.')}</p>
+      )}
+    </Panel>
+  )
 }
