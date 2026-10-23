@@ -5,9 +5,10 @@
 //! minutos de arco). A Lua usa elementos médios com a regressão dos nodos. Tudo
 //! é devolvido no referencial equatorial J2000, relativo ao corpo pai.
 
-use crate::math::{DEG, Vec3};
+use crate::math::{DEG, Vec3, wrap_2pi};
 use crate::orbit::{Elements, mean_to_true, state_from_elements};
 use crate::time::{DAY, centuries, gmst, tt};
+use std::f64::consts::FRAC_PI_2;
 use serde::{Deserialize, Serialize};
 
 pub const AU: f64 = 149_597_870_700.0;
@@ -302,11 +303,86 @@ impl Body {
         Some(Elements { a, e, i: inc, raan: node, argp, nu: mean_to_true(m, e) })
     }
 
+    /// Orientação pela IAU (WGCCRE): ascensão reta e declinação do polo norte
+    /// e ângulo do meridiano principal W, em radianos, no instante `t` (UTC;
+    /// calculada em TT). A Terra não entra aqui: gira pelo GMST em torno do Z.
+    pub fn iau(self, t: f64) -> Option<(f64, f64, f64)> {
+        let d = tt(t) / DAY;
+        let tc = centuries(tt(t));
+        let (a, dec, w) = match self {
+            Body::Earth => return None,
+            Body::Moon => {
+                // Termos periódicos principais (o polo da Lua oscila alguns graus).
+                let e = |c: f64, r: f64| ((c + r * d) * DEG);
+                let (e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13) = (
+                    e(125.045, -0.052_992_1),
+                    e(250.089, -0.105_984_2),
+                    e(260.008, 13.012_000_9),
+                    e(176.625, 13.340_715_4),
+                    e(357.529, 0.985_600_3),
+                    e(311.589, 26.405_708_4),
+                    e(134.963, 13.064_993_0),
+                    e(276.617, 0.328_714_6),
+                    e(34.226, 1.748_487_7),
+                    e(15.134, -0.158_976_3),
+                    e(119.743, 0.003_609_6),
+                    e(239.961, 0.164_357_3),
+                    e(25.053, 12.959_008_8),
+                );
+                let a = 269.9949 + 0.0031 * tc - 3.8787 * e1.sin() - 0.1204 * e2.sin() + 0.0700 * e3.sin() - 0.0172 * e4.sin() + 0.0072 * e6.sin() - 0.0052 * e10.sin() + 0.0043 * e13.sin();
+                let dec = 66.5392 + 0.0130 * tc + 1.5419 * e1.cos() + 0.0239 * e2.cos() - 0.0278 * e3.cos() + 0.0068 * e4.cos() - 0.0029 * e6.cos() + 0.0009 * e7.cos() + 0.0008 * e10.cos() - 0.0009 * e13.cos();
+                let w = 38.3213 + 13.176_358_15 * d - 1.4e-12 * d * d + 3.5610 * e1.sin() + 0.1208 * e2.sin() - 0.0642 * e3.sin() + 0.0158 * e4.sin() + 0.0252 * e5.sin() - 0.0066 * e6.sin() - 0.0047 * e7.sin() - 0.0046 * e8.sin()
+                    + 0.0028 * e9.sin()
+                    + 0.0052 * e10.sin()
+                    + 0.0040 * e11.sin()
+                    + 0.0019 * e12.sin()
+                    - 0.0044 * e13.sin();
+                (a, dec, w)
+            }
+            Body::Mars => (317.681_43 - 0.1061 * tc, 52.886_50 - 0.0609 * tc, 176.630 + 350.891_982_26 * d),
+            Body::Mercury => (281.0103 - 0.0328 * tc, 61.4155 - 0.0049 * tc, 329.5988 + 6.138_510_8 * d),
+            Body::Venus => (272.76, 67.16, 160.20 - 1.481_368_8 * d),
+            Body::Jupiter => (268.056_595 - 0.006_499 * tc, 64.495_303 + 0.002_413 * tc, 284.95 + 870.536 * d),
+            Body::Saturn => (40.589 - 0.036 * tc, 83.537 - 0.004 * tc, 38.90 + 810.793_902_4 * d),
+            Body::Uranus => (257.311, -15.175, 203.81 - 501.160_092_8 * d),
+            Body::Neptune => {
+                let n = (357.85 + 52.316 * tc) * DEG;
+                (299.36 + 0.70 * n.sin(), 43.46 - 0.51 * n.cos(), 249.978 + 541.139_775_7 * d - 0.48 * n.sin())
+            }
+            Body::Sun => (286.13, 63.87, 84.176 + 14.1844 * d),
+        };
+        Some((a * DEG, dec * DEG, wrap_2pi(w * DEG)))
+    }
+
+    /// Polo norte de rotação (unitário, inercial). Sem `t`, o polo médio de J2000.
+    pub fn pole(self, t: Option<f64>) -> Vec3 {
+        match self.iau(t.unwrap_or(0.0)) {
+            None => Vec3::Z,
+            Some((a, d, _)) => Vec3::new(d.cos() * a.cos(), d.cos() * a.sin(), d.sin()),
+        }
+    }
+
+    /// Inercial → fixo no corpo (gira com ele; Z no polo norte, X no meridiano principal).
+    pub fn to_fixed(self, r: Vec3, t: f64) -> Vec3 {
+        match self.iau(t) {
+            None => r.rot_z(-gmst(t)),
+            Some((a, d, w)) => r.rot_z(-(FRAC_PI_2 + a)).rot_x(-(FRAC_PI_2 - d)).rot_z(-w),
+        }
+    }
+
+    /// Fixo no corpo → inercial.
+    pub fn to_inertial(self, rf: Vec3, t: f64) -> Vec3 {
+        match self.iau(t) {
+            None => rf.rot_z(gmst(t)),
+            Some((a, d, w)) => rf.rot_z(w).rot_x(FRAC_PI_2 - d).rot_z(FRAC_PI_2 + a),
+        }
+    }
+
     /// Converte posição relativa ao corpo (inercial) em latitude, longitude
-    /// (graus) e altitude (m), girando com o corpo. Esfera, exceto para a Terra
-    /// (elipsoide WGS-84).
+    /// (graus) e altitude (m), no referencial fixo do corpo (polos da IAU).
+    /// Esfera, exceto para a Terra (elipsoide WGS-84).
     pub fn to_geodetic(self, r: Vec3, t: f64) -> (f64, f64, f64) {
-        let rf = r.rot_z(-self.rotation_angle(t));
+        let rf = self.to_fixed(r, t);
         if self == Body::Earth {
             return ecef_to_geodetic(rf);
         }
@@ -318,28 +394,32 @@ impl Body {
 
     /// Posição inercial de um ponto da superfície (lat, lon em graus, alt em m).
     pub fn from_geodetic(self, lat: f64, lon: f64, alt: f64, t: f64) -> Vec3 {
-        let ecef = if self == Body::Earth {
+        let fixed = if self == Body::Earth {
             geodetic_to_ecef(lat, lon, alt)
         } else {
             let (la, lo) = (lat * DEG, lon * DEG);
             Vec3::new(la.cos() * lo.cos(), la.cos() * lo.sin(), la.sin()) * (self.radius() + alt)
         };
-        ecef.rot_z(self.rotation_angle(t))
+        self.to_inertial(fixed, t)
     }
 
-    /// Ângulo de rotação do corpo em torno do eixo Z (simplificação: todos os
-    /// polos alinhados ao Z equatorial; exato só para a Terra).
+    /// Ângulo do meridiano principal: o GMST na Terra, o W da IAU nos outros.
     pub fn rotation_angle(self, t: f64) -> f64 {
-        match self {
-            Body::Earth => gmst(t),
-            Body::Mars => (176.630 * DEG) + self.rotation_rate() * t,
-            b => b.rotation_rate() * t,
+        match self.iau(t) {
+            None => gmst(t),
+            Some((_, _, w)) => w,
         }
     }
 
-    /// Velocidade da superfície girando, num ponto inercial.
+    /// Velocidade da superfície girando, num ponto inercial (em torno do polo médio).
     pub fn surface_velocity(self, r: Vec3) -> Vec3 {
-        Vec3::Z.cross(r) * self.rotation_rate()
+        self.pole(None).cross(r) * self.rotation_rate()
+    }
+
+    /// Inclinação de uma órbita no equador do corpo (rad), pelo momento angular.
+    pub fn equatorial_inclination(self, h: Vec3, t: f64) -> f64 {
+        let n = h.unit();
+        n.dot(self.pole(Some(t))).clamp(-1.0, 1.0).acos()
     }
 
     /// Altitude acima da superfície (elipsoide na Terra), sem a longitude.
@@ -455,6 +535,45 @@ mod tests {
         let (e, _) = Body::Earth.state(t);
         let (m, _) = Body::Mars.state(t);
         assert!(e.angle(m).to_degrees() < 3.0, "{}", e.angle(m).to_degrees());
+    }
+
+    #[test]
+    fn polos_da_iau() {
+        let t = from_calendar(2026, 10, 19, 0, 0, 0.0);
+        for b in Body::ALL {
+            // O polo vai para o Z do corpo, e ida e volta não muda o vetor.
+            let p = b.pole(Some(t));
+            assert!((b.to_fixed(p, t) - Vec3::Z).norm() < 1e-12, "{b:?}");
+            let r = Vec3::new(1.0, 2.0, 3.0);
+            assert!((b.to_inertial(b.to_fixed(r, t), t) - r).norm() < 1e-12, "{b:?}");
+        }
+        // Marte: polo a 52,9° de declinação; a Terra continua com o Z.
+        assert!((Body::Mars.pole(Some(t)).z.asin().to_degrees() - 52.87).abs() < 0.1);
+        assert_eq!(Body::Earth.pole(Some(t)), Vec3::Z);
+    }
+
+    #[test]
+    fn a_lua_mostra_sempre_a_mesma_face() {
+        // Vista da Lua, a Terra fica perto de 0°, 0° (libração de até ~8°).
+        for dias in [0.0, 7.0, 13.0, 20.0, 100.0, 1_000.0, 3_000.0] {
+            let t = from_calendar(2026, 1, 1, 0, 0, 0.0) + dias * DAY;
+            let (moon, _) = Body::Moon.state(t);
+            let (lat, lon, _) = Body::Moon.to_geodetic(-moon, t);
+            assert!(lat.abs() < 9.0 && lon.abs() < 10.0, "dia {dias}: {lat:.1}°, {lon:.1}°");
+        }
+    }
+
+    #[test]
+    fn geodesicas_na_lua_e_inclinacao_no_equador() {
+        let t = 5.0e8;
+        let r = Body::Moon.from_geodetic(-45.0, 120.0, 1_000.0, t);
+        let (lat, lon, alt) = Body::Moon.to_geodetic(r, t);
+        assert!((lat + 45.0).abs() < 1e-9 && (lon - 120.0).abs() < 1e-9 && (alt - 1_000.0).abs() < 1e-6);
+        // Órbita polar da Lua: 90° no equador dela, qualquer coisa no da Terra.
+        let pole = Body::Moon.pole(Some(t));
+        let h = pole.any_perpendicular();
+        assert!((Body::Moon.equatorial_inclination(h, t).to_degrees() - 90.0).abs() < 1e-9);
+        assert!(Body::Moon.equatorial_inclination(pole, t).to_degrees() < 1e-6);
     }
 
     #[test]

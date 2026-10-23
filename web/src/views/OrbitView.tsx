@@ -31,6 +31,7 @@ export function OrbitView() {
             <Tm v={v} id="orb.sma" digits={1} />
             <Tm v={v} id="orb.ecc" digits={5} />
             <Tm v={v} id="orb.inc" digits={3} />
+            {v.central !== 'earth' && <Tm v={v} id="orb.inc_eq" digits={3} />}
             <Tm v={v} id="orb.raan" digits={2} />
             <Tm v={v} id="orb.argp" digits={2} />
             <Tm v={v} id="orb.ta" digits={2} />

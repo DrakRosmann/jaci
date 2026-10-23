@@ -1360,4 +1360,5 @@ export const EN: Record<string, string> = {
   'script desconhecido': 'unknown script',
   'regra de bordo não manda comando perigoso': 'an onboard rule does not send hazardous commands',
   'comando desconhecido': 'unknown command',
+  'Inclinação no equador do corpo': 'Inclination to the body equator',
 }
