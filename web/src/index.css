@@ -1598,3 +1598,175 @@ tr.sel td {
   }
 }
 .modal:focus { outline: none; }
+
+/* Faixa de relógios da sala (inspirada nos painéis numéricos do MOCR do Apollo) */
+.mission-clocks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  padding: 6px 14px;
+  background: #05080f;
+  border-bottom: 1px solid var(--line);
+}
+.mclock {
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+}
+.mclock-label {
+  font: 600 10px var(--mono);
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+.mclock-digits {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-family: var(--mono);
+  color: #e8f0ff;
+}
+.mclock-digits .sign {
+  font-size: 18px;
+}
+.mclock-digits .grp {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+}
+.mclock-digits b {
+  font-size: 22px;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+.mclock-digits small {
+  font-size: 8px;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+}
+.mclock.orange .mclock-digits {
+  color: var(--accent);
+}
+.mclock.amber .mclock-digits {
+  color: var(--warn);
+}
+.mclock.cyan .mclock-digits {
+  color: var(--accent-2);
+}
+.mclock.green .mclock-digits {
+  color: var(--good);
+}
+.wall .mission-clocks {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.wall .mclock-digits b {
+  font-size: 34px;
+}
+.wall .mclock {
+  min-width: 260px;
+}
+.wall-block.program td {
+  font-size: 17px;
+  padding: 4px 8px;
+}
+
+/* Temas inspirados nas salas reais: fósforo verde (Apollo) e âmbar */
+:root[data-theme='fosforo'] {
+  --map-sea: #010a04;
+  --map-grid: #0b2a17;
+  --map-land: #06240f;
+  --map-coast: #2f9a5a;
+  --bg: #010603;
+  --panel: #03100a;
+  --panel-2: #06170e;
+  --line: #12452a;
+  --text: #8dffb2;
+  --muted: #3e9c63;
+  --accent: #d6ff8a;
+  --accent-2: #5cffc0;
+  --good: #8dffb2;
+  --warn: #f0ff6a;
+  --bad: #ff6a6a;
+  --info: #7fd9a8;
+  --sans: var(--mono);
+}
+:root[data-theme='ambar'] {
+  --map-sea: #0a0500;
+  --map-grid: #2a1a04;
+  --map-land: #241503;
+  --map-coast: #a2711f;
+  --bg: #080400;
+  --panel: #120a01;
+  --panel-2: #1c1003;
+  --line: #4a2f08;
+  --text: #ffbf47;
+  --muted: #a2711f;
+  --accent: #ffd27a;
+  --accent-2: #ffcf66;
+  --good: #ffd27a;
+  --warn: #fff07a;
+  --bad: #ff6a4a;
+  --info: #e0a850;
+  --sans: var(--mono);
+}
+:root[data-theme='fosforo'] body,
+:root[data-theme='ambar'] body {
+  text-shadow: 0 0 5px color-mix(in srgb, var(--text) 35%, transparent);
+}
+:root[data-theme='fosforo'] body::after,
+:root[data-theme='ambar'] body::after {
+  /* Linhas de varredura do tubo. */
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  background: repeating-linear-gradient(0deg, #0000 0 2px, #0000002e 2px 3px);
+}
+:root[data-theme='fosforo'] :is(.topbar, nav.consoles, .events, .mission-clocks, .ctl-panel, .annunciators),
+:root[data-theme='ambar'] :is(.topbar, nav.consoles, .events, .mission-clocks, .ctl-panel, .annunciators) {
+  background: var(--bg);
+}
+:root[data-theme='fosforo'] :is(button.primary, button.active, nav.consoles button.active, tr.sel td),
+:root[data-theme='ambar'] :is(button.primary, button.active, nav.consoles button.active, tr.sel td) {
+  background: color-mix(in srgb, var(--accent-2) 18%, var(--panel));
+  border-color: var(--accent-2);
+}
+:root[data-theme='fosforo'] :is(input, select, textarea),
+:root[data-theme='ambar'] :is(input, select, textarea) {
+  background: var(--bg);
+}
+:root[data-theme='fosforo'] .mclock-digits,
+:root[data-theme='ambar'] .mclock-digits {
+  color: var(--text);
+}
+:root[data-theme='fosforo'] .tile.red,
+:root[data-theme='ambar'] .tile.red {
+  background: color-mix(in srgb, var(--bad) 18%, var(--panel));
+}
+
+:root[data-theme='fosforo'] .topbar,
+:root[data-theme='ambar'] .topbar {
+  gap: 9px;
+}
+:root[data-theme='fosforo'] .topbar .brand small,
+:root[data-theme='ambar'] .topbar .brand small {
+  display: inline-block;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+:root[data-theme='fosforo'] .topbar button.small,
+:root[data-theme='ambar'] .topbar button.small {
+  padding: 2px 5px;
+}
+
+.vehicle-select {
+  max-width: 230px;
+}

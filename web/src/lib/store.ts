@@ -36,6 +36,10 @@ export interface UiState {
   lang: 'pt' | 'en'
   eventsOpen: boolean
   navCollapsed: boolean
+  /** Visual das telas: moderno, fósforo verde (Apollo) ou âmbar. */
+  theme: 'moderno' | 'fosforo' | 'ambar'
+  /** Faixa de relógios da sala (GMT, GET, próximo evento, AOS/LOS). */
+  clocks: boolean
 }
 
 export const VIEWS: View[] = ['overview', 'launch', 'trajectory', 'orbit', 'rendezvous', 'systems', 'commands', 'telemetry', 'stations', 'interplanetary', 'procedures', 'instructor', 'ksp', 'timeline', 'custom', 'wall', 'school', 'manual', 'vehicle3d']
@@ -52,7 +56,7 @@ export function parseHash(hash: string): Partial<Pick<UiState, 'view' | 'lang'>>
 }
 
 function loadUi(): UiState {
-  const base: UiState = { view: 'overview', selected: null, lang: 'pt', eventsOpen: true, navCollapsed: false }
+  const base: UiState = { view: 'overview', selected: null, lang: 'pt', eventsOpen: true, navCollapsed: false, theme: 'moderno', clocks: true }
   let ui = base
   try {
     const saved = JSON.parse(localStorage.getItem('jaci.ui') ?? '{}')
@@ -104,8 +108,8 @@ class Store {
       }
     }
     try {
-      const { view, lang, eventsOpen, navCollapsed } = this.ui
-      localStorage.setItem('jaci.ui', JSON.stringify({ view, lang, eventsOpen, navCollapsed }))
+      const { view, lang, eventsOpen, navCollapsed, theme, clocks } = this.ui
+      localStorage.setItem('jaci.ui', JSON.stringify({ view, lang, eventsOpen, navCollapsed, theme, clocks }))
     } catch {
       /* sem armazenamento */
     }

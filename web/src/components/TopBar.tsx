@@ -4,6 +4,7 @@ import { kerbinTime, met } from '../lib/format'
 import { WARPS } from '../lib/consoles'
 import { SoundMenu } from './SoundMenu'
 import { ChatDock, RoomChip } from './Room'
+import { ThemeMenu } from './ThemeMenu'
 import { store, useStore } from '../lib/store'
 
 export function TopBar({ onHelp, onRoom }: { onHelp: () => void; onRoom: () => void }) {
@@ -55,7 +56,7 @@ export function TopBar({ onHelp, onRoom }: { onHelp: () => void; onRoom: () => v
         </span>
       )}
       <div className="spacer" />
-      <select aria-label={t('Veículo selecionado')} value={selected ?? ''} onChange={(e) => store.setUi({ selected: Number(e.target.value) })} title={t('Veículo selecionado')}>
+      <select className="vehicle-select" aria-label={t('Veículo selecionado')} value={selected ?? ''} onChange={(e) => store.setUi({ selected: Number(e.target.value) })} title={t('Veículo selecionado')}>
         {vehicles.map((v) => (
           <option key={v.id} value={v.id}>
             {tx(v.name)} · {tx(v.phase_name)}
@@ -94,17 +95,12 @@ export function TopBar({ onHelp, onRoom }: { onHelp: () => void; onRoom: () => v
       <RoomChip onOpen={onRoom} />
       <ChatDock open={chat} onToggle={() => setChat(!chat)} />
       <SoundMenu />
+      <ThemeMenu />
       <span title={connected ? t('Conectado') : t('Sem conexão')} role="status" aria-label={connected ? t('Conectado') : t('Sem conexão')}>
         <span className={`dot ${connected ? 'good' : 'bad'}`} />
       </span>
       <button className="small" onClick={() => store.setUi({ lang: lang === 'pt' ? 'en' : 'pt' })} title="Português / English (l)" aria-label={lang === 'pt' ? 'English' : 'Português'}>
         {lang === 'pt' ? 'EN' : 'PT'}
-      </button>
-      <button className="small" onClick={() => window.open(location.href, '_blank', 'noopener')} title={t('Abrir este console numa janela nova (para outro monitor)')} aria-label={t('Abrir numa janela nova')}>
-        ⧉
-      </button>
-      <button className="small" onClick={() => store.setUi({ view: 'wall' })} title={`${t('Telão: tela cheia para a parede da sala')} (w)`} aria-label={t('Telão')}>
-        ⛶
       </button>
       <button className="small" onClick={onHelp} title={t('Atalhos de teclado') + ' (?)'} aria-label={t('Atalhos de teclado')}>
         ?

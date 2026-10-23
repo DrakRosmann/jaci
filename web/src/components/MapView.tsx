@@ -88,7 +88,8 @@ export function MapView({
       const X = (lon: number) => ((wrapLon(lon - center) + 180) / 360) * w
       const Y = (lat: number) => ((90 - lat) / 180) * h
       const dpr = window.devicePixelRatio || 1
-      const key = `${w}x${h}@${dpr}:${center}:${earth}:${land != null}`
+      const theme = document.documentElement.dataset.theme ?? ''
+      const key = `${w}x${h}@${dpr}:${center}:${earth}:${land != null}:${theme}`
       if (base.current?.key !== key) {
         const c = base.current?.canvas ?? document.createElement('canvas')
         c.width = Math.max(1, Math.round(w * dpr))
@@ -218,10 +219,16 @@ export function MapView({
 }
 
 /** A camada fixa: fundo, grade e continentes. */
+/** Cor do tema (variável CSS), ou a padrão. */
+function cssVar(name: string, fallback: string): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return v || fallback
+}
+
 function drawBase(ctx: CanvasRenderingContext2D, w: number, h: number, X: (l: number) => number, Y: (l: number) => number, earth: boolean, center: number) {
-  ctx.fillStyle = '#081426'
+  ctx.fillStyle = cssVar('--map-sea', '#081426')
   ctx.fillRect(0, 0, w, h)
-  ctx.strokeStyle = '#15233f'
+  ctx.strokeStyle = cssVar('--map-grid', '#15233f')
   ctx.lineWidth = 1
   for (let lon = -180; lon <= 180; lon += 30) {
     const x = Math.round(X(lon)) + 0.5
@@ -238,8 +245,8 @@ function drawBase(ctx: CanvasRenderingContext2D, w: number, h: number, X: (l: nu
     ctx.stroke()
   }
   if (land && earth) {
-    ctx.fillStyle = '#16294a'
-    ctx.strokeStyle = '#2d4a7a'
+    ctx.fillStyle = cssVar('--map-land', '#16294a')
+    ctx.strokeStyle = cssVar('--map-coast', '#2d4a7a')
     for (const ring of land) {
       for (const part of splitDateline(ring.map(([lo, la]) => [wrapLon(lo - center) + center, la] as [number, number]))) {
         ctx.beginPath()

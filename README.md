@@ -177,6 +177,13 @@ sequência automática de ativação de satélite.
 A interface está em português e inglês (botão no canto); os textos do servidor que têm tradução
 também mudam.
 
+Inspirada nas salas de verdade: a faixa de relógios embaixo da barra de cima, como os painéis
+numéricos do MOCR do Apollo — GMT com o dia do ano, GET (tempo desde o lançamento, ou a
+contagem), o próximo evento com a contagem até ele e AOS/LOS (quanto falta para ganhar ou perder o
+sinal) —; o "programa de trabalho" no telão, como o do TsUP de Moscou; e o menu 🖥 (Tela), com o
+telão, a janela nova para outro monitor, a faixa de relógios e o visual: moderno, fósforo verde
+(os consoles do Apollo) ou âmbar (os terminais dos anos 70 e 80), com linhas de varredura.
+
 O botão 🔇 da barra de cima (ou a tecla `m`) liga o som de cada tela: o alarme mestre (dois tons
 enquanto houver alarme vermelho não reconhecido; "Silenciar" cala só aquela tela até o próximo), um
 aviso para os amarelos e a locução da contagem ("T menos 30 segundos", "10, 9, …", "Decolagem",

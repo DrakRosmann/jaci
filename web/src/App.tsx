@@ -3,6 +3,7 @@ import { Toasts } from './components/ui'
 import { EventLog } from './components/EventLog'
 import { TopBar } from './components/TopBar'
 import { ReplayBar } from './components/ReplayBar'
+import { MissionClocks } from './components/MissionClocks'
 import { JoinDialog } from './components/Room'
 import { LessonPanel } from './components/LessonPanel'
 import { Shortcuts } from './components/Shortcuts'
@@ -76,6 +77,11 @@ export default function App() {
   useEffect(() => {
     document.documentElement.lang = lang === 'en' ? 'en' : 'pt-BR'
   }, [lang])
+  const theme = useStore((s) => s.ui.theme)
+  const clocks = useStore((s) => s.ui.clocks)
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+  }, [theme])
   const Current = VIEWS[view]
   // Telão: tela cheia, sem menus nem barras.
   if (view === 'wall') {
@@ -95,6 +101,7 @@ export default function App() {
   return (
     <div className="app">
       <TopBar onHelp={() => setHelp(true)} onRoom={() => setJoin(true)} />
+      {clocks && hasSnap && <MissionClocks />}
       <ReplayBar />
       <div className={`body ${collapsed ? 'collapsed' : ''}`}>
         <nav className="consoles" aria-label={t('Consoles')}>

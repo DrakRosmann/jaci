@@ -278,6 +278,15 @@ function OrbitPage({ v, height, zoom }: { v: Vehicle; height: number; zoom: numb
       const R = v.central_radius ?? body?.radius ?? 6.378e6
       const mu = MU[v.central] ?? 3.986004418e14
       if (!v.r || !v.v) return
+      // Na plataforma ou no chão não há órbita para desenhar.
+      if (['prelaunch', 'landed', 'splashdown', 'destroyed'].includes(v.phase)) {
+        ctx.fillStyle = C.dim
+        ctx.font = '13px ui-monospace, monospace'
+        ctx.textAlign = 'center'
+        ctx.fillText(`${tx(v.phase_name).toUpperCase()} — ${t('SEM ÓRBITA')}`, w / 2, h / 2)
+        ctx.textAlign = 'left'
+        return
+      }
       const r = v.r as V3
       const el = elements(r, v.v as V3, mu)
       const xAxis = el.e > 1e-6 ? unit(el.evec) : unit(r)

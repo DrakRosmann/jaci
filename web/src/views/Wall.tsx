@@ -3,7 +3,10 @@
 // últimos eventos. Abre em /#telao; Esc ou o botão volta aos consoles.
 
 import { useEffect, useRef, useState } from 'react'
-import { AlarmsWidget, ClocksWidget, CountdownWidget, EventsWidget, FleetWidget, MapWidget } from '../components/Widgets'
+import { AlarmsWidget, CountdownWidget, EventsWidget, FleetWidget, MapWidget } from '../components/Widgets'
+import { MissionClocks } from '../components/MissionClocks'
+import { utc } from '../lib/format'
+import { useUpcoming } from '../lib/upcoming'
 import { t, tx } from '../lib/i18n'
 import { store, useStore } from '../lib/store'
 
@@ -35,11 +38,11 @@ export function Wall() {
         <span className="mission">{tx(mission)}</span>
         {!connected && <span className="bad">{t('Sem conexão com o servidor')}</span>}
         <span style={{ flex: 1 }} />
-        <ClocksWidget />
         <button className="small" onClick={() => store.setUi({ view: 'overview' })} title={t('Voltar aos consoles (Esc)')}>
           ✕
         </button>
       </header>
+      <MissionClocks />
       <div className="wall-grid">
         <section className="wall-map" ref={mapBox}>
           <MapWidget height={mapH} />
@@ -58,11 +61,38 @@ export function Wall() {
             <h2>{t('Frota')}</h2>
             <FleetWidget big />
           </div>
+          <WorkProgram />
         </section>
         <section className="wall-events">
           <EventsWidget count={8} />
         </section>
       </div>
+    </div>
+  )
+}
+
+/** Programa de trabalho (como o painel do TsUP): os próximos eventos com a hora. */
+function WorkProgram() {
+  const up = useUpcoming(12 * 3_600)
+  const now = useStore((s) => s.snap?.t ?? 0)
+  const name = useStore((s) => s.selected?.name)
+  const list = up.events.filter((e) => e.t > now).slice(0, 8)
+  if (list.length === 0) return null
+  return (
+    <div className="wall-block program">
+      <h2>
+        {t('Programa de trabalho')} · {name}
+      </h2>
+      <table>
+        <tbody>
+          {list.map((e, i) => (
+            <tr key={i}>
+              <td className="mono">{utc(e.t, false).slice(0, 5)}</td>
+              <td>{e.text}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
