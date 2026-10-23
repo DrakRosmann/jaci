@@ -50,7 +50,9 @@ Para mexer na interface com recarga automática: `cargo run --release --bin jaci
 `npm run dev` em `web/` no outro (o Vite repassa o WebSocket para a 8080).
 
 O endereço aceita atalhos: `/#launch` abre o console de lançamento, `/#orbit&en` o de órbita em
-inglês.
+inglês; voltar e avançar do navegador trocam de console. No teclado, `1`…`9`, `0`, `-`, `=` e `\`
+abrem os consoles na ordem do menu, espaço pausa, `[` e `]` mudam a aceleração do tempo, `e` mostra
+os eventos, `l` troca a língua e `?` lista os atalhos (nenhum manda comando a veículo).
 
 ## Cenários
 

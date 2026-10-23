@@ -1,104 +1,208 @@
-import { useEffect } from 'react'
+import { Component, Suspense, lazy, useEffect, useState, type ComponentType, type ReactNode } from 'react'
 import { Toasts } from './components/ui'
 import { EventLog } from './components/EventLog'
 import { TopBar } from './components/TopBar'
+import { Shortcuts } from './components/Shortcuts'
 import { t } from './lib/i18n'
+import { utc } from './lib/format'
+import { CONSOLES, CONSOLE_KEYS, WARPS } from './lib/consoles'
 import { store, useStore, type View } from './lib/store'
-import { Overview } from './views/Overview'
-import { LaunchView } from './views/Launch'
-import { Trajectory } from './views/Trajectory'
-import { OrbitView } from './views/OrbitView'
-import { Rendezvous } from './views/Rendezvous'
-import { SystemsView } from './views/Systems'
-import { Commands } from './views/Commands'
-import { Telemetry } from './views/Telemetry'
-import { Stations } from './views/Stations'
-import { Interplanetary } from './views/Interplanetary'
-import { Procedures } from './views/Procedures'
-import { Instructor } from './views/Instructor'
-import { KspView } from './views/Ksp'
 
-const CONSOLES: { id: View; code: string; name: string }[] = [
-  { id: 'overview', code: 'FLIGHT', name: 'Visão geral' },
-  { id: 'launch', code: 'LCC', name: 'Lançamento' },
-  { id: 'trajectory', code: 'BOOSTER', name: 'Subida e reentrada' },
-  { id: 'orbit', code: 'FIDO', name: 'Órbita e manobras' },
-  { id: 'rendezvous', code: 'RNDZ', name: 'Encontro' },
-  { id: 'systems', code: 'EECOM', name: 'Subsistemas' },
-  { id: 'commands', code: 'CMD', name: 'Comandos' },
-  { id: 'telemetry', code: 'TLM', name: 'Telemetria e alarmes' },
-  { id: 'stations', code: 'INCO', name: 'Estações de solo' },
-  { id: 'interplanetary', code: 'NAV', name: 'Interplanetário' },
-  { id: 'procedures', code: 'PROC', name: 'Procedimentos' },
-  { id: 'instructor', code: 'SIM', name: 'Instrutor' },
-  { id: 'ksp', code: 'KSP', name: 'Kerbal Space Program' },
-]
+// Cada console é carregado na primeira vez que é aberto: o three.js (vista 3D)
+// e os consoles pesados não atrasam a abertura da interface.
+type Lazy = React.LazyExoticComponent<ComponentType> & { preload: () => void }
+
+function view<M>(load: () => Promise<M>, pick: (m: M) => ComponentType): Lazy {
+  const C = lazy(() => load().then((m) => ({ default: pick(m) }))) as Lazy
+  C.preload = () => void load()
+  return C
+}
+
+const VIEWS: Record<View, Lazy> = {
+  overview: view(() => import('./views/Overview'), (m) => m.Overview),
+  launch: view(() => import('./views/Launch'), (m) => m.LaunchView),
+  trajectory: view(() => import('./views/Trajectory'), (m) => m.Trajectory),
+  orbit: view(() => import('./views/OrbitView'), (m) => m.OrbitView),
+  rendezvous: view(() => import('./views/Rendezvous'), (m) => m.Rendezvous),
+  systems: view(() => import('./views/Systems'), (m) => m.SystemsView),
+  commands: view(() => import('./views/Commands'), (m) => m.Commands),
+  telemetry: view(() => import('./views/Telemetry'), (m) => m.Telemetry),
+  stations: view(() => import('./views/Stations'), (m) => m.Stations),
+  interplanetary: view(() => import('./views/Interplanetary'), (m) => m.Interplanetary),
+  procedures: view(() => import('./views/Procedures'), (m) => m.Procedures),
+  instructor: view(() => import('./views/Instructor'), (m) => m.Instructor),
+  ksp: view(() => import('./views/Ksp'), (m) => m.KspView),
+}
+
+/** Sem instantâneo há mais que isso, os dados são dados como congelados. */
+const STALE_MS = 3000
 
 export default function App() {
   useEffect(() => {
     store.connect()
+    window.addEventListener('hashchange', store.followHash)
+    window.addEventListener('popstate', store.followHash)
+    return () => {
+      window.removeEventListener('hashchange', store.followHash)
+      window.removeEventListener('popstate', store.followHash)
+    }
   }, [])
   const view = useStore((s) => s.ui.view)
   const alarms = useStore((s) => s.snap?.alarms.filter((a) => !a.acked && a.active).length ?? 0)
-  const connected = useStore((s) => s.connected)
   const hasSnap = useStore((s) => s.snap != null)
-  useStore((s) => s.ui.lang)
+  const collapsed = useStore((s) => s.ui.navCollapsed)
+  const lang = useStore((s) => s.ui.lang)
+  const [help, setHelp] = useState(false)
+  useTitle()
+  useKeys(setHelp)
+  useEffect(() => {
+    document.documentElement.lang = lang === 'en' ? 'en' : 'pt-BR'
+  }, [lang])
+  const Current = VIEWS[view]
   return (
     <div className="app">
-      <TopBar />
-      <div className="body">
-        <nav className="consoles">
-          {CONSOLES.map((c) => (
-            <button key={c.id} className={view === c.id ? 'active' : ''} onClick={() => store.setUi({ view: c.id })}>
+      <TopBar onHelp={() => setHelp(true)} />
+      <div className={`body ${collapsed ? 'collapsed' : ''}`}>
+        <nav className="consoles" aria-label={t('Consoles')}>
+          <button className="collapse" onClick={() => store.setUi({ navCollapsed: !collapsed })} title={collapsed ? t('Mostrar os nomes dos consoles') : t('Recolher o menu')} aria-label={collapsed ? t('Mostrar os nomes dos consoles') : t('Recolher o menu')}>
+            {collapsed ? '»' : '«'}
+          </button>
+          {CONSOLES.map((c, i) => (
+            <button
+              key={c.id}
+              className={view === c.id ? 'active' : ''}
+              aria-current={view === c.id ? 'page' : undefined}
+              onClick={() => store.setUi({ view: c.id })}
+              title={`${t(c.name)} (${CONSOLE_KEYS[i]})`}
+              onMouseEnter={VIEWS[c.id].preload}
+            >
               <span className="code">{c.code}</span>
-              <span>{t(c.name)}</span>
-              {c.id === 'telemetry' && alarms > 0 && <span className="badge">{alarms}</span>}
+              <span className="name">{t(c.name)}</span>
+              {c.id === 'telemetry' && alarms > 0 && (
+                <span className="badge" aria-label={t('{n} alarmes não reconhecidos', { n: alarms })}>
+                  {alarms}
+                </span>
+              )}
             </button>
           ))}
         </nav>
         <main>
+          <Stale />
           {!hasSnap ? (
-            <div className="muted" style={{ padding: 40, textAlign: 'center' }}>
-              {connected ? t('Recebendo o estado da simulação…') : t('Conectando ao servidor do Jaci…')}
-            </div>
+            <Waiting />
           ) : (
-            <Current view={view} />
+            <ViewBoundary key={view}>
+              <Suspense fallback={<div className="muted loading">{t('Carregando o console…')}</div>}>
+                <Current />
+              </Suspense>
+            </ViewBoundary>
           )}
         </main>
       </div>
       <EventLog />
       <Toasts />
+      {help && <Shortcuts onClose={() => setHelp(false)} />}
     </div>
   )
 }
 
-function Current({ view }: { view: View }) {
-  switch (view) {
-    case 'overview':
-      return <Overview />
-    case 'launch':
-      return <LaunchView />
-    case 'trajectory':
-      return <Trajectory />
-    case 'orbit':
-      return <OrbitView />
-    case 'rendezvous':
-      return <Rendezvous />
-    case 'systems':
-      return <SystemsView />
-    case 'commands':
-      return <Commands />
-    case 'telemetry':
-      return <Telemetry />
-    case 'stations':
-      return <Stations />
-    case 'interplanetary':
-      return <Interplanetary />
-    case 'procedures':
-      return <Procedures />
-    case 'instructor':
-      return <Instructor />
-    case 'ksp':
-      return <KspView />
+function Waiting() {
+  const connected = useStore((s) => s.connected)
+  return <div className="muted loading">{connected ? t('Recebendo o estado da simulação…') : t('Conectando ao servidor do Jaci…')}</div>
+}
+
+/** Faixa de aviso quando a conexão cai ou os instantâneos param de chegar. */
+function Stale() {
+  const connected = useStore((s) => s.connected)
+  const hasSnap = useStore((s) => s.snap != null)
+  const last = useStore((s) => s.lastSnapAt)
+  const t0 = useStore((s) => s.snap?.t)
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const h = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(h)
+  }, [])
+  if (!hasSnap) return null
+  const frozen = !connected || now - last > STALE_MS
+  if (!frozen) return null
+  return (
+    <div className="banner alarm stale" role="alert">
+      <b>{connected ? t('Telemetria parada') : t('Sem conexão com o servidor')}</b> — {t('os dados abaixo estão congelados desde')} <span className="mono">{t0 != null ? utc(t0) : '—'}</span>
+      {!connected && <> · {t('reconectando…')}</>}
+    </div>
+  )
+}
+
+/** Um erro num console não derruba a interface inteira. */
+class ViewBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null }
+  static getDerivedStateFromError(error: Error) {
+    return { error }
   }
+  componentDidCatch(error: Error) {
+    console.error(error)
+  }
+  render() {
+    if (!this.state.error) return this.props.children
+    return (
+      <div className="banner alarm">
+        <b>{t('Este console falhou')}</b>: <span className="mono">{String(this.state.error.message)}</span>
+        <div className="row" style={{ marginTop: 8 }}>
+          <button onClick={() => this.setState({ error: null })}>{t('Tentar de novo')}</button>
+          <button onClick={() => location.reload()}>{t('Recarregar a página')}</button>
+        </div>
+      </div>
+    )
+  }
+}
+
+/** Título da aba: alarmes e contagem, para ver de outra janela. */
+function useTitle() {
+  const alarms = useStore((s) => s.snap?.alarms.filter((a) => !a.acked && a.active).length ?? 0)
+  const clock = useStore((s) => {
+    const lc = s.snap?.launch
+    return lc && lc.vehicle != null && lc.state !== 'launched' && lc.state !== 'idle' ? lc.clock : null
+  })
+  const mission = useStore((s) => s.snap?.mission)
+  useEffect(() => {
+    const parts = [alarms > 0 ? `(${alarms}) ` : '', clock ? `${clock} · ` : '', 'Jaci', mission ? ` — ${mission}` : '']
+    document.title = parts.join('')
+  }, [alarms, clock, mission])
+}
+
+/** Atalhos de teclado (fora de campos de texto). Nenhum manda comando a um veículo. */
+function useKeys(setHelp: (b: boolean) => void) {
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      const el = e.target as HTMLElement | null
+      if (el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))) return
+      const i = CONSOLE_KEYS.indexOf(e.key)
+      if (i >= 0 && CONSOLES[i]) {
+        store.setUi({ view: CONSOLES[i].id })
+      } else if (e.key === ' ') {
+        if (el?.tagName === 'BUTTON') return
+        store.sim(store.snap?.paused ? 'resume' : 'pause')
+      } else if (e.key === '[' || e.key === ']') {
+        const cur = store.snap?.warp ?? 1
+        const idx = WARPS.findIndex((w) => w >= cur)
+        const at = idx < 0 ? WARPS.length - 1 : idx
+        const next = e.key === ']' ? WARPS[Math.min(at + (WARPS[at] === cur ? 1 : 0), WARPS.length - 1)] : WARPS[Math.max(at - 1, 0)]
+        store.sim('warp', { value: next })
+      } else if (e.key === 'e') {
+        store.setUi({ eventsOpen: !store.ui.eventsOpen })
+      } else if (e.key === 'l') {
+        store.setUi({ lang: store.ui.lang === 'pt' ? 'en' : 'pt' })
+      } else if (e.key === '?') {
+        setHelp(true)
+      } else if (e.key === 'Escape') {
+        setHelp(false)
+      } else {
+        return
+      }
+      e.preventDefault()
+    }
+    window.addEventListener('keydown', down)
+    return () => window.removeEventListener('keydown', down)
+  }, [setHelp])
 }

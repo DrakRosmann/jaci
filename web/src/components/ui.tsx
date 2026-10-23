@@ -92,7 +92,7 @@ export function Toasts() {
     }
   }, [])
   return (
-    <div className="toasts">
+    <div className="toasts" role="status" aria-live="polite">
       {toasts.map((x) => (
         <div key={x.id} className={`toast ${x.kind}`}>
           {x.text}

@@ -2,9 +2,10 @@
 // traços previstos, veículos, ponto de impacto instantâneo e corredor. Em
 // outro corpo (os do KSP), só a grade, os traços e os veículos dele.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useCanvas } from './Chart'
 import { circle, footprintDeg, splitDateline, subsolar, terminator, wrapLon } from '../lib/geo'
+import { t } from '../lib/i18n'
 import { store, useStore } from '../lib/store'
 import type { Vehicle } from '../types'
 
@@ -78,43 +79,27 @@ export function MapView({
   const snap = useStore((s) => s.snap)
   const hello = useStore((s) => s.hello)
   const selected = useStore((s) => s.ui.selected)
+  // Fundo, grade e continentes não mudam a cada instantâneo: ficam numa camada
+  // guardada, refeita só quando muda o tamanho, o centro ou o corpo.
+  const base = useRef<{ key: string; canvas: HTMLCanvasElement } | null>(null)
   const ref = useCanvas(
     (ctx, w, h) => {
       const X = (lon: number) => ((wrapLon(lon - center) + 180) / 360) * w
       const Y = (lat: number) => ((90 - lat) / 180) * h
-      ctx.fillStyle = '#081426'
-      ctx.fillRect(0, 0, w, h)
-      // Grade.
-      ctx.strokeStyle = '#15233f'
-      ctx.lineWidth = 1
-      for (let lon = -180; lon <= 180; lon += 30) {
-        const x = Math.round(X(lon)) + 0.5
-        ctx.beginPath()
-        ctx.moveTo(x, 0)
-        ctx.lineTo(x, h)
-        ctx.stroke()
-      }
-      for (let lat = -60; lat <= 60; lat += 30) {
-        const y = Math.round(Y(lat)) + 0.5
-        ctx.beginPath()
-        ctx.moveTo(0, y)
-        ctx.lineTo(w, y)
-        ctx.stroke()
-      }
-      // Continentes.
-      if (land && earth) {
-        ctx.fillStyle = '#16294a'
-        ctx.strokeStyle = '#2d4a7a'
-        for (const ring of land) {
-          for (const part of splitDateline(ring.map(([lo, la]) => [wrapLon(lo - center) + center, la] as [number, number]))) {
-            ctx.beginPath()
-            part.forEach(([lo, la], i) => (i ? ctx.lineTo(X(lo), Y(la)) : ctx.moveTo(X(lo), Y(la))))
-            ctx.closePath()
-            ctx.fill()
-            ctx.stroke()
-          }
+      const dpr = window.devicePixelRatio || 1
+      const key = `${w}x${h}@${dpr}:${center}:${earth}:${land != null}`
+      if (base.current?.key !== key) {
+        const c = base.current?.canvas ?? document.createElement('canvas')
+        c.width = Math.max(1, Math.round(w * dpr))
+        c.height = Math.max(1, Math.round(h * dpr))
+        const b = c.getContext('2d')
+        if (b) {
+          b.setTransform(dpr, 0, 0, dpr, 0, 0)
+          drawBase(b, w, h, X, Y, earth, center)
         }
+        base.current = { key, canvas: c }
       }
+      ctx.drawImage(base.current.canvas, 0, 0, w, h)
       if (!snap) return
       if (!earth) {
         ctx.font = '10px ui-monospace, monospace'
@@ -226,9 +211,44 @@ export function MapView({
   }
   return (
     <div className="canvas-wrap" style={{ height, aspectRatio: '2 / 1', maxHeight: height, width: '100%' }}>
-      <canvas ref={ref} onClick={click} style={{ cursor: 'crosshair' }} />
+      <canvas ref={ref} onClick={click} style={{ cursor: 'crosshair' }} role="img" aria-label={t('Mapa com os veículos, as estações e os traços previstos')} />
     </div>
   )
+}
+
+/** A camada fixa: fundo, grade e continentes. */
+function drawBase(ctx: CanvasRenderingContext2D, w: number, h: number, X: (l: number) => number, Y: (l: number) => number, earth: boolean, center: number) {
+  ctx.fillStyle = '#081426'
+  ctx.fillRect(0, 0, w, h)
+  ctx.strokeStyle = '#15233f'
+  ctx.lineWidth = 1
+  for (let lon = -180; lon <= 180; lon += 30) {
+    const x = Math.round(X(lon)) + 0.5
+    ctx.beginPath()
+    ctx.moveTo(x, 0)
+    ctx.lineTo(x, h)
+    ctx.stroke()
+  }
+  for (let lat = -60; lat <= 60; lat += 30) {
+    const y = Math.round(Y(lat)) + 0.5
+    ctx.beginPath()
+    ctx.moveTo(0, y)
+    ctx.lineTo(w, y)
+    ctx.stroke()
+  }
+  if (land && earth) {
+    ctx.fillStyle = '#16294a'
+    ctx.strokeStyle = '#2d4a7a'
+    for (const ring of land) {
+      for (const part of splitDateline(ring.map(([lo, la]) => [wrapLon(lo - center) + center, la] as [number, number]))) {
+        ctx.beginPath()
+        part.forEach(([lo, la], i) => (i ? ctx.lineTo(X(lo), Y(la)) : ctx.moveTo(X(lo), Y(la))))
+        ctx.closePath()
+        ctx.fill()
+        ctx.stroke()
+      }
+    }
+  }
 }
 
 function drawLine(ctx: CanvasRenderingContext2D, pts: [number, number][], X: (l: number) => number, Y: (l: number) => number) {

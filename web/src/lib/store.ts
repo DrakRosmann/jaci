@@ -1,7 +1,8 @@
 // Conexão com o servidor e o estado da interface, num só lugar. Os componentes
-// leem com useStore(); a cada instantâneo a versão muda e eles redesenham.
+// leem com useStore(seletor): a cada mudança o seletor roda de novo, e o
+// componente só redesenha quando o valor escolhido muda.
 
-import { useSyncExternalStore } from 'react'
+import { useRef, useSyncExternalStore } from 'react'
 import type { EventMsg, Hello, Snapshot, TmDef, Vehicle } from '../types'
 import { History } from './history'
 
@@ -27,12 +28,23 @@ export interface UiState {
   selected: number | null
   lang: 'pt' | 'en'
   eventsOpen: boolean
+  navCollapsed: boolean
 }
 
-const VIEWS: View[] = ['overview', 'launch', 'trajectory', 'orbit', 'rendezvous', 'systems', 'commands', 'telemetry', 'stations', 'interplanetary', 'procedures', 'instructor', 'ksp']
+export const VIEWS: View[] = ['overview', 'launch', 'trajectory', 'orbit', 'rendezvous', 'systems', 'commands', 'telemetry', 'stations', 'interplanetary', 'procedures', 'instructor', 'ksp']
+
+/** Console e língua pedidos no endereço: /#launch abre o lançamento; /#orbit&en, a órbita em inglês. */
+export function parseHash(hash: string): Partial<Pick<UiState, 'view' | 'lang'>> {
+  const out: Partial<Pick<UiState, 'view' | 'lang'>> = {}
+  for (const part of hash.replace(/^#/, '').split('&')) {
+    if ((VIEWS as string[]).includes(part)) out.view = part as View
+    if (part === 'en' || part === 'pt') out.lang = part
+  }
+  return out
+}
 
 function loadUi(): UiState {
-  const base: UiState = { view: 'overview', selected: null, lang: 'pt', eventsOpen: true }
+  const base: UiState = { view: 'overview', selected: null, lang: 'pt', eventsOpen: true, navCollapsed: false }
   let ui = base
   try {
     const saved = JSON.parse(localStorage.getItem('jaci.ui') ?? '{}')
@@ -40,13 +52,7 @@ function loadUi(): UiState {
   } catch {
     /* sem armazenamento */
   }
-  // Atalho pelo endereço: /#launch abre o console de lançamento; /#en em inglês.
-  const hash = typeof location === 'undefined' ? '' : location.hash
-  for (const part of hash.slice(1).split('&')) {
-    if ((VIEWS as string[]).includes(part)) ui.view = part as View
-    if (part === 'en' || part === 'pt') ui.lang = part
-  }
-  return ui
+  return { ...ui, ...parseHash(typeof location === 'undefined' ? '' : location.hash) }
 }
 
 class Store {
@@ -58,6 +64,8 @@ class Store {
   ui: UiState = loadUi()
   history = new History(4000)
   version = 0
+  /** Quando chegou o último instantâneo (relógio do navegador, ms). */
+  lastSnapAt = 0
   private listeners = new Set<Listener>()
   private ws: WebSocket | null = null
   private reqId = 1
@@ -75,15 +83,32 @@ class Store {
   }
 
   setUi(patch: Partial<UiState>) {
+    const before = this.ui
     this.ui = { ...this.ui, ...patch }
-    if (patch.view) history.replaceState(null, '', `#${patch.view}`)
+    // O console vai para o histórico do navegador (voltar e avançar trocam de console).
+    if (typeof location !== 'undefined' && (this.ui.view !== before.view || this.ui.lang !== before.lang)) {
+      const hash = `#${this.ui.view}${this.ui.lang === 'en' ? '&en' : ''}`
+      if (location.hash !== hash) {
+        if (this.ui.view !== before.view) history.pushState(null, '', hash)
+        else history.replaceState(null, '', hash)
+      }
+    }
     try {
-      const { view, lang, eventsOpen } = this.ui
-      localStorage.setItem('jaci.ui', JSON.stringify({ view, lang, eventsOpen }))
+      const { view, lang, eventsOpen, navCollapsed } = this.ui
+      localStorage.setItem('jaci.ui', JSON.stringify({ view, lang, eventsOpen, navCollapsed }))
     } catch {
       /* sem armazenamento */
     }
     this.emit()
+  }
+
+  /** O endereço mudou (voltar, avançar ou digitado): segue o que ele pede. */
+  followHash = () => {
+    const want = parseHash(location.hash)
+    if ((want.view && want.view !== this.ui.view) || (want.lang && want.lang !== this.ui.lang)) {
+      this.ui = { ...this.ui, ...want }
+      this.emit()
+    }
   }
 
   connect() {
@@ -139,6 +164,7 @@ class Store {
       case 'snapshot': {
         const s = d as Snapshot
         this.snap = s
+        this.lastSnapAt = Date.now()
         if (s.events.length) {
           this.events = this.events.concat(s.events)
           if (this.events.length > 3000) this.events = this.events.slice(-2500)
@@ -202,7 +228,33 @@ export function defaultVehicle(vs: Vehicle[]): number | null {
 
 export const store = new Store()
 
-export function useStore<T>(select: (s: Store) => T): T {
-  useSyncExternalStore(store.subscribe, () => store.version)
-  return select(store)
+/** Igualdade rasa: mesmos itens (listas) ou mesmos campos (objetos). */
+export function shallow<T>(a: T, b: T): boolean {
+  if (Object.is(a, b)) return true
+  if (typeof a !== 'object' || typeof b !== 'object' || a == null || b == null) return false
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+  const ka = Object.keys(a)
+  if (ka.length !== Object.keys(b).length) return false
+  return ka.every((k) => Object.is((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]))
+}
+
+/**
+ * Lê o estado e redesenha o componente só quando o valor escolhido muda
+ * (por `Object.is`, ou pela igualdade dada; `shallow` para listas e objetos
+ * montados no seletor).
+ */
+export function useStore<T>(select: (s: Store) => T, equal: (a: T, b: T) => boolean = Object.is): T {
+  const last = useRef<{ version: number; select: (s: Store) => T; value: T } | null>(null)
+  const get = () => {
+    const prev = last.current
+    if (prev && prev.version === store.version && prev.select === select) return prev.value
+    const value = select(store)
+    if (prev && equal(prev.value, value)) {
+      last.current = { version: store.version, select, value: prev.value }
+      return prev.value
+    }
+    last.current = { version: store.version, select, value }
+    return value
+  }
+  return useSyncExternalStore(store.subscribe, get, get)
 }

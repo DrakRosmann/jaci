@@ -1,26 +1,43 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { t, tx } from '../lib/i18n'
 import { utc } from '../lib/format'
-import { store, useStore } from '../lib/store'
+import { shallow, store, useStore } from '../lib/store'
+import type { EventMsg } from '../types'
+
+// Chave estável de cada evento (a lista é cortada no começo quando cresce).
+const keys = new WeakMap<EventMsg, number>()
+let nextKey = 1
+function keyOf(e: EventMsg): number {
+  let k = keys.get(e)
+  if (k == null) {
+    k = nextKey++
+    keys.set(e, k)
+  }
+  return k
+}
 
 export function EventLog() {
   const open = useStore((s) => s.ui.eventsOpen)
   const events = useStore((s) => s.events)
-  const vehicles = useStore((s) => s.snap?.vehicles)
+  // Só os nomes: o registro não precisa redesenhar a cada instantâneo.
+  const names = useStore((s) => Object.fromEntries((s.snap?.vehicles ?? []).map((v) => [v.id, v.name])) as Record<number, string>, shallow)
   const selected = useStore((s) => s.ui.selected)
   const [onlySel, setOnlySel] = useState(false)
   const [level, setLevel] = useState<'all' | 'warn'>('all')
   const list = useRef<HTMLDivElement>(null)
-  const shown = events.filter((e) => (!onlySel || e.vehicle === selected) && (level === 'all' || e.level === 'warn' || e.level === 'alarm')).slice(-400)
+  const shown = useMemo(
+    () => events.filter((e) => (!onlySel || e.vehicle === selected) && (level === 'all' || e.level === 'warn' || e.level === 'alarm')).slice(-400),
+    [events, onlySel, selected, level],
+  )
   useEffect(() => {
     const el = list.current
     if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 80) el.scrollTop = el.scrollHeight
-  }, [shown.length])
-  const name = (id: number | null) => (id == null ? '' : (vehicles?.find((v) => v.id === id)?.name ?? `#${id}`))
+  }, [shown])
+  const name = (id: number | null) => (id == null ? '' : (names[id] ?? `#${id}`))
   return (
     <section className="events" style={{ maxHeight: open ? 210 : 26 }}>
       <header>
-        <button className="small" onClick={() => store.setUi({ eventsOpen: !open })}>
+        <button className="small" onClick={() => store.setUi({ eventsOpen: !open })} aria-expanded={open} aria-label={open ? t('Esconder os eventos') : t('Mostrar os eventos')} title="e">
           {open ? '▾' : '▸'}
         </button>
         {t('Eventos')} ({events.length})
@@ -36,9 +53,9 @@ export function EventLog() {
         )}
       </header>
       {open && (
-        <div className="list" ref={list}>
-          {shown.map((e, i) => (
-            <div key={i} className={`ev ${e.level}`}>
+        <div className="list" ref={list} role="log" aria-label={t('Eventos')}>
+          {shown.map((e) => (
+            <div key={keyOf(e)} className={`ev ${e.level}`}>
               <span className="muted">{utc(e.t)}</span>
               <span className="who">{name(e.vehicle)}</span>
               <span className="txt">{tx(e.text)}</span>

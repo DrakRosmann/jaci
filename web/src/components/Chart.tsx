@@ -1,6 +1,6 @@
 // Gráfico de linhas em canvas: séries no tempo, escala automática.
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 export interface Series {
   label: string
@@ -47,11 +47,33 @@ function niceStep(range: number, ticks: number): number {
   return (n < 1.5 ? 1 : n < 3 ? 2 : n < 7 ? 5 : 10) * mag
 }
 
+/** Índice do ponto de `ts` (crescente) mais perto de `t`. */
+function nearest(ts: number[], t: number): number {
+  let lo = 0
+  let hi = ts.length - 1
+  if (hi < 0) return -1
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1
+    if (ts[mid] < t) lo = mid
+    else hi = mid
+  }
+  return Math.abs(ts[lo] - t) <= Math.abs(ts[hi] - t) ? lo : hi
+}
+
+function fmtValue(v: number): string {
+  if (!isFinite(v)) return '—'
+  return Math.abs(v) >= 1e5 || (Math.abs(v) < 1e-3 && v !== 0) ? v.toExponential(3) : Number(v.toPrecision(5)).toString()
+}
+
 export function Chart({ series, height = 180, t0, unit, yMin, yMax }: { series: Series[]; height?: number; t0?: number; unit?: string; yMin?: number; yMax?: number }) {
+  // Posição do mouse (fração da largura útil), para a linha e os valores.
+  const [hover, setHover] = useState<number | null>(null)
+  const layout = useRef({ l: 52, r: 10 })
   const ref = useCanvas(
     (ctx, w, h) => {
       ctx.clearRect(0, 0, w, h)
       const pad = { l: 52, r: 10, t: 8, b: 22 }
+      layout.current = { l: pad.l, r: pad.r }
       let tmin = Infinity
       let tmax = -Infinity
       let vmin = Infinity
@@ -147,12 +169,58 @@ export function Chart({ series, height = 180, t0, unit, yMin, yMax }: { series: 
         ctx.fillText(s.label, lx + 14, pad.t + 9)
         lx += ctx.measureText(s.label).width + 30
       }
+      // Linha do mouse e os valores no instante dela.
+      if (hover != null) {
+        const th = tmin + hover * (tmax - tmin)
+        const x = Math.round(X(th)) + 0.5
+        ctx.strokeStyle = '#8494b3'
+        ctx.setLineDash([3, 3])
+        ctx.beginPath()
+        ctx.moveTo(x, pad.t)
+        ctx.lineTo(x, h - pad.b)
+        ctx.stroke()
+        ctx.setLineDash([])
+        const rel = th - base
+        const lines = [`${rel >= 0 ? '+' : ''}${rel.toFixed(Math.abs(rel) < 100 ? 1 : 0)} s`]
+        const colors = ['#d9e2f2']
+        for (const s of series) {
+          const i = nearest(s.t, th)
+          if (i < 0) continue
+          const v = s.v[i]
+          if (isFinite(v)) {
+            ctx.fillStyle = s.color
+            ctx.beginPath()
+            ctx.arc(X(s.t[i]), Y(v), 3, 0, Math.PI * 2)
+            ctx.fill()
+          }
+          lines.push(`${s.label}: ${fmtValue(v)}`)
+          colors.push(s.color)
+        }
+        const bw = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 12
+        const bh = lines.length * 14 + 6
+        const bx = x + 8 + bw > w - pad.r ? x - 8 - bw : x + 8
+        const by = pad.t + 16
+        ctx.fillStyle = 'rgba(10,17,34,0.92)'
+        ctx.strokeStyle = '#22304d'
+        ctx.fillRect(bx, by, bw, bh)
+        ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1)
+        lines.forEach((l, i) => {
+          ctx.fillStyle = colors[i]
+          ctx.fillText(l, bx + 6, by + 15 + i * 14)
+        })
+      }
     },
-    [series, t0, unit, yMin, yMax],
+    [series, t0, unit, yMin, yMax, hover],
   )
+  const move = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    const { l, r: pr } = layout.current
+    const f = (e.clientX - r.left - l) / Math.max(1, r.width - l - pr)
+    setHover(f >= 0 && f <= 1 ? f : null)
+  }
   return (
     <div className="canvas-wrap" style={{ height }}>
-      <canvas ref={ref} />
+      <canvas ref={ref} onMouseMove={move} onMouseLeave={() => setHover(null)} role="img" aria-label={series.map((s) => s.label).join(', ')} />
     </div>
   )
 }

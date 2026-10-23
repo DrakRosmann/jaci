@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { Orbit3D } from '../components/Orbit3D'
+import { Suspense, lazy, useState } from 'react'
 import { KspAttitude, KspManeuvers } from './Ksp'
 import { CmdButton, Empty, Panel, Tm, sendCommand, toast } from '../components/ui'
 import { t, tx } from '../lib/i18n'
@@ -7,6 +6,10 @@ import { duration, latlon, num } from '../lib/format'
 import { usePrediction } from '../lib/hooks'
 import { store, useStore } from '../lib/store'
 import type { Plan, Vehicle } from '../types'
+
+// O three.js só é baixado quando a vista 3D aparece: Encontro e Interplanetário
+// usam o planejador daqui sem precisar dele.
+const Orbit3D = lazy(() => import('../components/Orbit3D').then((m) => ({ default: m.Orbit3D })))
 
 export function OrbitView() {
   const v = useStore((s) => s.selected)
@@ -17,7 +20,9 @@ export function OrbitView() {
     <div className="grid">
       <div className="grid cols-3">
         <Panel title={`${t('Órbita')} · ${v.name} · ${v.central_name ?? v.central}`} className="span-2" flush>
-          <Orbit3D vehicle={v.id} prediction={pred.points} height={440} />
+          <Suspense fallback={<div className="loading muted" style={{ height: 440 }}>{t('Carregando a vista 3D…')}</div>}>
+            <Orbit3D vehicle={v.id} prediction={pred.points} height={440} />
+          </Suspense>
         </Panel>
         <Panel title={t('Elementos orbitais')}>
           <div className="tiles">

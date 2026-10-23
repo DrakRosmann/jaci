@@ -6,6 +6,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { kindColor } from './MapView'
 import type { PredPoint } from '../lib/hooks'
+import { t } from '../lib/i18n'
 import { useStore } from '../lib/store'
 
 interface Props {
@@ -47,6 +48,32 @@ const BODY_COLOR: Record<string, number> = {
 
 let land: [number, number][][] | null = null
 
+// Peças repetidas a cada instantâneo: uma geometria e um material por cor,
+// reaproveitados, para não criar (e vazar) memória de vídeo cinco vezes por segundo.
+const MARKER = new THREE.SphereGeometry(1, 12, 8)
+const NODE = new THREE.OctahedronGeometry(0.03)
+const basic = new Map<string, THREE.MeshBasicMaterial>()
+function basicMaterial(color: number | string): THREE.MeshBasicMaterial {
+  const key = String(color)
+  let m = basic.get(key)
+  if (!m) {
+    m = new THREE.MeshBasicMaterial({ color })
+    basic.set(key, m)
+  }
+  return m
+}
+
+/** Esvazia um grupo liberando a memória de vídeo do que não é compartilhado. */
+function clearGroup(g: THREE.Group) {
+  for (const o of g.children) {
+    const m = o as THREE.Mesh
+    if (m.geometry && m.geometry !== MARKER && m.geometry !== NODE) m.geometry.dispose()
+    const mats = Array.isArray(m.material) ? m.material : m.material ? [m.material] : []
+    for (const mat of mats) if (![...basic.values()].includes(mat as THREE.MeshBasicMaterial)) mat.dispose()
+  }
+  g.clear()
+}
+
 // Inercial (x, y, z com z ao norte) → three.js (y para cima).
 function toThree(x: number, y: number, z: number, scale: number): THREE.Vector3 {
   return new THREE.Vector3(x / scale, z / scale, -y / scale)
@@ -60,6 +87,7 @@ export function Orbit3D({ vehicle, prediction, others = [], height = 420 }: Prop
     camera: THREE.PerspectiveCamera
     controls: OrbitControls
     body: THREE.Group
+    paths: THREE.Group
     dyn: THREE.Group
     radius: number
     central: string
@@ -67,10 +95,18 @@ export function Orbit3D({ vehicle, prediction, others = [], height = 420 }: Prop
   const snap = useStore((s) => s.snap)
   const hello = useStore((s) => s.hello)
   const [landReady, setLandReady] = useState(land != null)
+  const [noGl, setNoGl] = useState(false)
 
   useEffect(() => {
     const el = mount.current!
-    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    let renderer: THREE.WebGLRenderer
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true })
+    } catch {
+      // Sem WebGL (driver, máquina remota): o resto do console continua.
+      setNoGl(true)
+      return
+    }
     renderer.setPixelRatio(window.devicePixelRatio)
     el.appendChild(renderer.domElement)
     const scene = new THREE.Scene()
@@ -84,8 +120,9 @@ export function Orbit3D({ vehicle, prediction, others = [], height = 420 }: Prop
     sun.name = 'sun'
     scene.add(sun)
     const body = new THREE.Group()
+    const paths = new THREE.Group()
     const dyn = new THREE.Group()
-    scene.add(body, dyn)
+    scene.add(body, paths, dyn)
     // Estrelas ao fundo.
     const stars = new THREE.BufferGeometry()
     const sp: number[] = []
@@ -95,7 +132,7 @@ export function Orbit3D({ vehicle, prediction, others = [], height = 420 }: Prop
     }
     stars.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3))
     scene.add(new THREE.Points(stars, new THREE.PointsMaterial({ color: 0x8899bb, size: 1.2, sizeAttenuation: false })))
-    three.current = { renderer, scene, camera, controls, body, dyn, radius: 1, central: '' }
+    three.current = { renderer, scene, camera, controls, body, paths, dyn, radius: 1, central: '' }
     const resize = () => {
       const w = el.clientWidth
       const h = el.clientHeight
@@ -106,10 +143,18 @@ export function Orbit3D({ vehicle, prediction, others = [], height = 420 }: Prop
     resize()
     const ro = new ResizeObserver(resize)
     ro.observe(el)
+    // Só desenha enquanto a vista está na tela.
+    let visible = true
+    const io = new IntersectionObserver(([e]) => {
+      visible = e.isIntersecting
+    })
+    io.observe(el)
     let raf = 0
     const loop = () => {
-      controls.update()
-      renderer.render(scene, camera)
+      if (visible) {
+        controls.update()
+        renderer.render(scene, camera)
+      }
       raf = requestAnimationFrame(loop)
     }
     loop()
@@ -126,7 +171,12 @@ export function Orbit3D({ vehicle, prediction, others = [], height = 420 }: Prop
     return () => {
       cancelAnimationFrame(raf)
       ro.disconnect()
+      io.disconnect()
       controls.dispose()
+      clearGroup(body)
+      clearGroup(paths)
+      clearGroup(dyn)
+      stars.dispose()
       renderer.dispose()
       el.removeChild(renderer.domElement)
     }
@@ -135,13 +185,15 @@ export function Orbit3D({ vehicle, prediction, others = [], height = 420 }: Prop
   // Corpo central.
   const v = snap?.vehicles.find((x) => x.id === vehicle)
   const central = v?.central ?? 'earth'
+  const nodes = v?.nodes?.filter((n) => !n.done) ?? []
+  const nodesKey = nodes.map((n) => `${n.id}:${n.t}`).join(',')
   useEffect(() => {
     const th = three.current
     if (!th || !hello) return
     // Naves do KSP trazem o raio do corpo (o "sun" do jogo não é o Sol de verdade).
     const radius = v?.central_radius ?? hello.bodies.find((b) => b.id === central)?.radius ?? 6.378e6
     if (th.central === central && th.radius === radius && th.body.children.length > 1) return
-    th.body.clear()
+    clearGroup(th.body)
     th.central = central
     th.radius = radius
     const sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 48), new THREE.MeshPhongMaterial({ color: BODY_COLOR[central] ?? 0x445566, shininess: 8 }))
@@ -168,7 +220,30 @@ export function Orbit3D({ vehicle, prediction, others = [], height = 420 }: Prop
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [central, hello, landReady, v?.central_radius])
 
-  // Rotação do corpo, Sol, trajetórias e veículos.
+  // Trajetórias e queimas: só quando a previsão muda.
+  useEffect(() => {
+    const th = three.current
+    if (!th) return
+    const R = th.radius
+    clearGroup(th.paths)
+    const line = (pts: PredPoint[], color: number | string, opacity = 1) => {
+      if (pts.length < 2) return
+      const g = new THREE.BufferGeometry().setFromPoints(pts.map((p) => toThree(p[4], p[5], p[6], R)))
+      th.paths.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color, transparent: opacity < 1, opacity })))
+    }
+    line(prediction, 0x4cc3ff)
+    for (const o of others) line(o.points, o.color, 0.6)
+    // Queimas planejadas: um marcador no ponto previsto mais próximo.
+    for (const n of nodes) {
+      const p = prediction.reduce<PredPoint | null>((best, q) => (best == null || Math.abs(q[0] - n.t) < Math.abs(best[0] - n.t) ? q : best), null)
+      if (!p) continue
+      const m = new THREE.Mesh(NODE, basicMaterial(0xff8a3d))
+      m.position.copy(toThree(p[4], p[5], p[6], R))
+      th.paths.add(m)
+    }
+  }, [prediction, others, nodesKey, central]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Rotação do corpo, Sol e veículos: a cada instantâneo.
   useEffect(() => {
     const th = three.current
     if (!th || !snap) return
@@ -176,34 +251,16 @@ export function Orbit3D({ vehicle, prediction, others = [], height = 420 }: Prop
     if (central === 'earth') th.body.rotation.y = snap.gmst
     const sun = th.scene.getObjectByName('sun') as THREE.DirectionalLight | undefined
     if (sun) sun.position.copy(toThree(snap.sun[0], snap.sun[1], snap.sun[2], 1).multiplyScalar(10))
-    th.dyn.clear()
-    const line = (pts: PredPoint[], color: number | string, opacity = 1) => {
-      if (pts.length < 2) return
-      const g = new THREE.BufferGeometry().setFromPoints(pts.map((p) => toThree(p[4], p[5], p[6], R)))
-      th.dyn.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color, transparent: opacity < 1, opacity })))
-    }
-    line(prediction, 0x4cc3ff)
-    for (const o of others) line(o.points, o.color, 0.6)
+    clearGroup(th.dyn)
     for (const x of snap.vehicles) {
       if (!x.r || x.central !== central || x.attached_to) continue
       if (x.kind === 'debris' && x.id !== vehicle) continue
-      const p = toThree(x.r[0], x.r[1], x.r[2], R)
-      const size = x.id === vehicle ? 0.035 : 0.022
-      const m = new THREE.Mesh(new THREE.SphereGeometry(size, 12, 8), new THREE.MeshBasicMaterial({ color: x.id === vehicle ? 0xffffff : kindColor(x.kind) }))
-      m.position.copy(p)
+      const m = new THREE.Mesh(MARKER, basicMaterial(x.id === vehicle ? 0xffffff : kindColor(x.kind)))
+      m.scale.setScalar(x.id === vehicle ? 0.035 : 0.022)
+      m.position.copy(toThree(x.r[0], x.r[1], x.r[2], R))
       th.dyn.add(m)
     }
-    // Queimas planejadas: seta no ponto previsto.
-    if (v?.nodes) {
-      for (const n of v.nodes.filter((n) => !n.done)) {
-        const p = prediction.reduce<PredPoint | null>((best, q) => (best == null || Math.abs(q[0] - n.t) < Math.abs(best[0] - n.t) ? q : best), null)
-        if (!p) continue
-        const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.03), new THREE.MeshBasicMaterial({ color: 0xff8a3d }))
-        m.position.copy(toThree(p[4], p[5], p[6], R))
-        th.dyn.add(m)
-      }
-    }
-  }, [snap, prediction, others, vehicle, central, v?.nodes])
+  }, [snap, vehicle, central])
 
   // Enquadra a órbita quando muda de veículo ou de corpo: olha de cima do plano,
   // um pouco inclinado, e afasta até caber.
@@ -223,5 +280,9 @@ export function Orbit3D({ vehicle, prediction, others = [], height = 420 }: Prop
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vehicle, central, prediction.length > 2])
 
-  return <div ref={mount} style={{ width: '100%', height }} />
+  return (
+    <div ref={mount} style={{ width: '100%', height }} role="img" aria-label={t('Vista 3D da órbita')}>
+      {noGl && <div className="loading muted" style={{ height }}>{t('Sem WebGL neste navegador: a vista 3D não está disponível.')}</div>}
+    </div>
+  )
 }
