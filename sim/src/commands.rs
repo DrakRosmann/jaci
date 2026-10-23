@@ -143,6 +143,7 @@ pub fn dictionary() -> Vec<CmdDef> {
         // Atitude
         def("att_mode", "Modo de atitude", "Atitude", "Escolhe para onde a nave aponta", vec![e("mode", "Modo", att_modes()), opt(a("target", "Alvo", "vehicle"))], false, false, &all),
         def("desat", "Descarregar rodas", "Atitude", "Descarrega o momento das rodas de reação (bobinas ou RCS)", vec![], false, false, &all),
+        def("att_nudge", "Atitude manual", "Atitude", "Pilotagem manual: gira a atitude alvo em graus, no referencial da nave", vec![opt(n("pitch", "Arfagem", "°")), opt(n("yaw", "Guinada", "°")), opt(n("roll", "Rolamento", "°"))], false, false, &all),
         def("rcs_pulse", "Pulso de RCS", "Atitude", "Translação curta com os propulsores de controle", vec![e("dir", "Direção", vec![("prograde", "Prógrado"), ("retrograde", "Retrógrado"), ("radial_out", "Radial +"), ("radial_in", "Radial −"), ("normal", "Normal"), ("antinormal", "Antinormal")]), n("dv", "Δv", "m/s")], false, false, &all),
         // Manobras
         def("burn", "Queima programada", "Manobras", "Acrescenta uma queima com Δv em RTN num instante", vec![n("t", "Daqui a", "s"), n("dv_r", "Δv radial", "m/s"), n("dv_t", "Δv transversal", "m/s"), n("dv_n", "Δv normal", "m/s"), opt(a("label", "Nome", "text"))], false, false, &all),

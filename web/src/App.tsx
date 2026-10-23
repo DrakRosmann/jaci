@@ -7,6 +7,7 @@ import { JoinDialog } from './components/Room'
 import { LessonPanel } from './components/LessonPanel'
 import { Shortcuts } from './components/Shortcuts'
 import { sound } from './lib/audio'
+import { PILOT_KEYS, pilot } from './lib/pilot'
 import { t, tx } from './lib/i18n'
 import { utc } from './lib/format'
 import { CONSOLES, CONSOLE_KEYS, WARPS } from './lib/consoles'
@@ -40,6 +41,8 @@ const VIEWS: Record<View, Lazy> = {
   custom: view(() => import('./views/Custom'), (m) => m.Custom),
   wall: view(() => import('./views/Wall'), (m) => m.Wall),
   school: view(() => import('./views/School'), (m) => m.School),
+  manual: view(() => import('./views/Manual'), (m) => m.Manual),
+  vehicle3d: view(() => import('./views/VehicleView'), (m) => m.VehicleView),
 }
 
 /** Sem instantâneo há mais que isso, os dados são dados como congelados. */
@@ -244,6 +247,8 @@ function useKeys(setHelp: (b: boolean) => void) {
       if (e.ctrlKey || e.metaKey || e.altKey) return
       const el = e.target as HTMLElement | null
       if (el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))) return
+      // Pilotando pelo teclado: as teclas de voo não são atalhos.
+      if (pilot.active && PILOT_KEYS.includes(e.key.toLowerCase())) return
       const i = CONSOLE_KEYS.indexOf(e.key)
       if (i >= 0 && CONSOLES[i]) {
         store.setUi({ view: CONSOLES[i].id })

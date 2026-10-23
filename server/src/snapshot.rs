@@ -200,6 +200,8 @@ fn vehicle(w: &World, v: &Vehicle) -> Value {
             "boosters": s.boosters,
             "spacecraft": s.spacecraft,
             "cryogenic": s.cryogenic,
+            "diameter": s.diameter,
+            "length": s.length,
             "leak": s.leak > 0.0,
             "engines": s.engines.iter().map(|e| json!({
                 "name": e.name,
@@ -214,6 +216,7 @@ fn vehicle(w: &World, v: &Vehicle) -> Value {
             })).collect::<Vec<_>>(),
         }))
         .collect::<Vec<_>>());
+    o["shape"] = json!(format!("{:?}", v.shape).to_lowercase());
     o["items"] = json!(v.items.iter().map(|i| json!({"id": i.id, "name": i.name})).collect::<Vec<_>>());
     o["chutes"] = json!(v.chutes.iter().map(|c| json!({"name": c.name, "state": format!("{:?}", c.state).to_lowercase(), "inflation": c.inflation, "alt": c.deploy_alt})).collect::<Vec<_>>());
     o["les"] = v.les.as_ref().map_or(Value::Null, |l| json!({"available": l.available, "firing": l.firing > 0.0, "tower": l.tower_mass > 0.0}));

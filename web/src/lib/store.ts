@@ -27,6 +27,8 @@ export type View =
   | 'custom'
   | 'wall'
   | 'school'
+  | 'manual'
+  | 'vehicle3d'
 
 export interface UiState {
   view: View
@@ -36,7 +38,7 @@ export interface UiState {
   navCollapsed: boolean
 }
 
-export const VIEWS: View[] = ['overview', 'launch', 'trajectory', 'orbit', 'rendezvous', 'systems', 'commands', 'telemetry', 'stations', 'interplanetary', 'procedures', 'instructor', 'ksp', 'timeline', 'custom', 'wall', 'school']
+export const VIEWS: View[] = ['overview', 'launch', 'trajectory', 'orbit', 'rendezvous', 'systems', 'commands', 'telemetry', 'stations', 'interplanetary', 'procedures', 'instructor', 'ksp', 'timeline', 'custom', 'wall', 'school', 'manual', 'vehicle3d']
 
 /** Console e língua pedidos no endereço: /#launch abre o lançamento; /#orbit&en, a órbita em inglês. */
 export function parseHash(hash: string): Partial<Pick<UiState, 'view' | 'lang'>> {

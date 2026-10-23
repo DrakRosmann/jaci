@@ -141,6 +141,21 @@ sequência automática de ativação de satélite.
   vazamento na cabine, remoção de CO₂, paraquedas, célula a combustível, barco na área, falha de solo
   e tempestade.
 * **Kerbal Space Program (KSP):** a ligação com o jogo e o controle das naves pelo kOS (veja abaixo).
+* **Controle manual (PILOT):** dois MFDs (telas multifunção com teclas na moldura) com as páginas
+  ADI — horizonte artificial com escada de arfagem, arco de rolamento, fita de rumo, taxas e os
+  marcadores de prógrado, normal e radial —, ORB (a órbita vista de cima do plano, com apsides,
+  tempos até eles e os outros veículos), RES (propelente por estágio, RCS, bateria, ar, água,
+  gravador, escudo e Δv), 3D (a nave) e MAPA; o quadro de avisos (alarme mestre, falha de motor,
+  combustível, bateria, pressão da cabine, enlace, modo seguro, terminação armada…); e o painel de
+  chaves: ignição, corte e potência, separação de estágio, carga, coifa e torre (com tampa de
+  proteção), aborto nos modos possíveis no momento, modo seguro, terminação de voo, modos de
+  atitude, pilotagem manual (setas ou teclado: W/S arfagem, A/D guinada, Q/E rolamento) que gira a
+  atitude alvo pelo enlace, pulsos de translação do RCS (I/K, J/L, H/N), paraquedas, trem,
+  painéis e transmissor.
+* **Nave em 3D (3D):** a nave montada dos estágios — diâmetros e comprimentos de verdade,
+  boosters, coifa, cápsula com torre de escape, painéis solares, paraquedas abertos, plumas dos
+  motores acesos —, na atitude dela em relação ao horizonte local, com os estágios e motores ao
+  lado.
 * **Escola de controle (EDU):** lições curtas para aprender a sala — primeiros passos, a primeira
   contagem (VSB-30), circularizar uma órbita, um vazamento na estação e uma asa solar danificada.
   Cada uma carrega um cenário e dá objetivos que o Jaci confere sozinho; um cartão acompanha em

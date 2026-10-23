@@ -134,6 +134,8 @@ export interface Stage {
   boosters?: boolean
   spacecraft?: boolean
   cryogenic?: boolean
+  diameter?: number
+  length?: number
   leak?: boolean
   engines?: Engine[]
 }
@@ -245,6 +247,8 @@ export interface Vehicle {
   tm?: Record<string, number | null>
   stages?: Stage[]
   items?: { id: string; name: string }[]
+  /** Forma aerodinâmica: rocket, capsule, winged ou box. */
+  shape?: string
   chutes?: { name: string; state: string; inflation: number; alt: number }[]
   les?: { available: boolean; firing: boolean; tower: boolean } | null
   heat_shield?: { ablator: number; temp: number; flux: number; peak: number } | null

@@ -19,10 +19,12 @@ export const CONSOLES: { id: View; code: string; name: string }[] = [
   { id: 'timeline', code: 'FAO', name: 'Linha do tempo' },
   { id: 'custom', code: 'MEU', name: 'Meu console' },
   { id: 'school', code: 'EDU', name: 'Escola de controle' },
+  { id: 'manual', code: 'PILOT', name: 'Controle manual' },
+  { id: 'vehicle3d', code: '3D', name: 'Nave em 3D' },
 ]
 
 /** Teclas dos consoles, na ordem do menu. */
-export const CONSOLE_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\\', 't', 'c', 'u']
+export const CONSOLE_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\\', 't', 'c', 'u', 'p', 'v']
 
 /** Acelerações do tempo da barra de cima (e das teclas [ e ]). */
 export const WARPS = [1, 10, 100, 1_000, 10_000, 100_000]

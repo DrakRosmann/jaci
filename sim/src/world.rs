@@ -5,7 +5,7 @@ use crate::bodies::Body;
 use crate::commands::{self, Command};
 use crate::ground::{self, Station};
 use crate::launch::{CountState, LaunchControl, Weather};
-use crate::math::{Rng, Vec3};
+use crate::math::{Quat, Rng, Vec3};
 use crate::orbit::{propagate_kepler, rtn_to_inertial};
 use crate::subsystems::AttMode;
 use crate::telemetry::{self, LimitState};
@@ -967,6 +967,27 @@ impl World {
                 "ok".into()
             }
             // ── Atitude ──
+            "att_nudge" => {
+                // Pilotagem manual: gira a atitude alvo no referencial do corpo
+                // (arfagem em Y, guinada em Z, rolamento em X) e o ADCS persegue.
+                if veh!().guidance.program != Program::None {
+                    return Err("o guiamento está no controle".into());
+                }
+                let (p, y, r) = (cmd.num("pitch").unwrap_or(0.0), cmd.num("yaw").unwrap_or(0.0), cmd.num("roll").unwrap_or(0.0));
+                let att = veh!().att;
+                let s = sys!();
+                let base = match s.adcs.mode {
+                    AttMode::Inertial(q) => q,
+                    _ => att,
+                };
+                let q = base
+                    .mul(Quat::from_axis_angle(Vec3::Y, p.to_radians()))
+                    .mul(Quat::from_axis_angle(Vec3::Z, y.to_radians()))
+                    .mul(Quat::from_axis_angle(Vec3::X, r.to_radians()))
+                    .normalized();
+                s.adcs.mode = AttMode::Inertial(q);
+                format!("atitude manual: arfagem {p:+.1}°, guinada {y:+.1}°, rolamento {r:+.1}°")
+            }
             "att_mode" => {
                 let target = cmd.str("target").and_then(|s| s.parse().ok()).or(cmd.num("target").map(|x| x as u32));
                 let mode = AttMode::from_id(cmd.str("mode").ok_or("falta o modo")?, target).ok_or("modo inválido")?;

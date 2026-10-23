@@ -472,3 +472,17 @@ fn escola_o_vazamento_da_licao_se_resolve() {
     println!("pressão depois de isolar: {p:.1} kPa");
     assert!(p > 95.0, "pressão {p}");
 }
+
+#[test]
+fn pilotagem_manual_gira_a_nave() {
+    // 20° de arfagem pedidos: o ADCS leva a nave até lá e segura.
+    let mut w = scenarios::build("observacao", t0(), 3).unwrap();
+    let id = w.vehicles[0].id;
+    let before = w.vehicle(id).unwrap().att;
+    w.execute(id, &Command::new("att_nudge").with("pitch", 20.0)).unwrap();
+    run_until(&mut w, 600.0, |_| false);
+    let after = w.vehicle(id).unwrap().att;
+    let angle = before.forward().angle(after.forward()).to_degrees();
+    println!("o eixo da nave girou {angle:.1}°");
+    assert!((angle - 20.0).abs() < 2.0, "{angle}");
+}
