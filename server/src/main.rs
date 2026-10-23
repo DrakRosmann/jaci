@@ -126,6 +126,9 @@ pub struct App {
     pub library: jaci_sim::library::Library,
     /// Automação por script (missoes/scripts/*.rhai).
     pub scripts: scripts::Scripts,
+    /// Pacotes CCSDS dos dicionários XTCE (missoes/ccsds/*.xml) e os arquivos com erro.
+    pub packet_defs: Vec<jaci_sim::xtce::PacketDef>,
+    pub xtce_errors: Vec<(String, String)>,
     pub missions_dir: PathBuf,
     /// Sala com posições e permissões.
     pub room: bool,
@@ -147,6 +150,8 @@ impl App {
     fn reload_library(&mut self) -> String {
         self.library = jaci_sim::library::Library::load(&self.missions_dir);
         self.scripts.load(&self.missions_dir.join("scripts"));
+        (self.packet_defs, self.xtce_errors) = load_xtce(&self.missions_dir.join("ccsds"));
+        self.dict_sig.clear();
         for (f, e) in &self.library.errors {
             tracing::warn!("missões: {f}: {e}");
         }
@@ -308,7 +313,7 @@ fn missions_dir(args: &Args, states: &std::path::Path) -> PathBuf {
     if !dir.exists() {
         let examples = std::env::current_exe().ok().and_then(|e| e.parent()?.parent().map(|p| p.join("share/jaci/missoes")));
         if let Some(src) = examples.filter(|d| d.is_dir()) {
-            for (sub, _) in jaci_sim::library::KINDS {
+            for sub in jaci_sim::library::KINDS.iter().map(|(k, _)| *k).chain(["scripts", "ccsds"]) {
                 let _ = std::fs::create_dir_all(dir.join(sub));
                 for f in std::fs::read_dir(src.join(sub)).into_iter().flatten().flatten() {
                     let _ = std::fs::copy(f.path(), dir.join(sub).join(f.file_name()));
@@ -318,6 +323,34 @@ fn missions_dir(args: &Args, states: &std::path::Path) -> PathBuf {
         }
     }
     dir
+}
+
+/// Lê os dicionários XTCE de uma pasta: os pacotes e os arquivos com erro.
+fn load_xtce(dir: &std::path::Path) -> (Vec<jaci_sim::xtce::PacketDef>, Vec<(String, String)>) {
+    let mut defs: Vec<jaci_sim::xtce::PacketDef> = Vec::new();
+    let mut errors = Vec::new();
+    let mut files: Vec<_> = std::fs::read_dir(dir).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "xml")).collect();
+    files.sort();
+    for p in files {
+        let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+        match std::fs::read_to_string(&p).map_err(|e| e.to_string()).and_then(|x| jaci_sim::xtce::parse(&x)) {
+            Ok(list) => {
+                for d in list {
+                    if let Some(old) = defs.iter().find(|x| x.apid == d.apid) {
+                        errors.push((name.clone(), format!("APID 0x{:03X} repetido ({} e {})", d.apid, old.container, d.container)));
+                    } else {
+                        tracing::info!("XTCE: APID 0x{:03X} = {} ({}, {} pontos)", d.apid, d.container, d.system, d.fields.len());
+                        defs.push(d);
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("XTCE {name}: {e}");
+                errors.push((name, e));
+            }
+        }
+    }
+    (defs, errors)
 }
 
 /// Gravações: a pedida ou a pasta irmã da dos estados salvos.
@@ -385,6 +418,7 @@ async fn main() -> anyhow::Result<()> {
     };
     tracing::info!("cenário {} em {}", world.mission, format_utc(world.t));
     let mut world = world;
+    let (packet_defs, xtce_errors) = load_xtce(&mdir.join("ccsds"));
     let satellites_file = states.with_file_name("satelites.tle");
     if let Ok(text) = std::fs::read_to_string(&satellites_file) {
         for (name, l1, l2) in jaci_sim::tracked::parse(&text) {
@@ -406,6 +440,8 @@ async fn main() -> anyhow::Result<()> {
             sc.load(&mdir.join("scripts"));
             sc
         },
+        packet_defs,
+        xtce_errors,
         missions_dir: mdir,
         recorder: None,
         replay: None,
@@ -545,13 +581,25 @@ async fn main() -> anyhow::Result<()> {
                     }
                     continue;
                 }
-                let names: Vec<(String, f64)> = p
-                    .points()
-                    .into_iter()
-                    .filter_map(|(i, v)| ccsds::NAV_POINTS.get(i as usize).map(|(id, _, _)| (id.to_string(), v as f64)))
-                    .collect();
                 let mut a = app.lock().unwrap();
-                let id = a.world.external_update(p.apid, names);
+                // Pacote de um dicionário XTCE: layout fixo; senão, pares (índice, valor) da navegação.
+                let id = match a.packet_defs.iter().find(|d| d.apid == p.apid).cloned() {
+                    Some(def) => match def.decode(&p.data) {
+                        Ok(points) => a.world.external_update_with(p.apid, points, Some(&def)),
+                        Err(e) => {
+                            tracing::warn!("{e}");
+                            continue;
+                        }
+                    },
+                    None => {
+                        let names: Vec<(String, f64)> = p
+                            .points()
+                            .into_iter()
+                            .filter_map(|(i, v)| ccsds::NAV_POINTS.get(i as usize).map(|(id, _, _)| (id.to_string(), v as f64)))
+                            .collect();
+                        a.world.external_update(p.apid, names)
+                    }
+                };
                 a.tc_routes.insert(id, from);
             }
         });
@@ -1222,13 +1270,20 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
             for sc in &a.scripts.list {
                 list.push(json!({"sub": "scripts", "id": sc.name, "name": if sc.enabled { "ligado" } else { "desligado" }, "error": sc.error}));
             }
+            let mut xmls: Vec<String> = std::fs::read_dir(a.missions_dir.join("ccsds")).into_iter().flatten().flatten().filter_map(|e| e.file_name().to_str()?.strip_suffix(".xml").map(String::from)).collect();
+            xmls.sort();
+            for x in xmls {
+                let error = a.xtce_errors.iter().find(|(n, _)| *n == x).map(|(_, e)| e.clone());
+                list.push(json!({"sub": "ccsds", "id": x, "name": "XTCE", "error": error}));
+            }
             json!({"type": "files", "req": req, "list": list, "dir": a.missions_dir.display().to_string()})
         }
         "file_get" => {
             let sub = msg.get("sub").and_then(|x| x.as_str()).unwrap_or("");
             let id = jaci_sim::library::clean_id(msg.get("id").and_then(|x| x.as_str()).unwrap_or(""));
-            if sub == "scripts" && !id.is_empty() {
-                return match std::fs::read_to_string(a.missions_dir.join("scripts").join(format!("{id}.{}", scripts::EXT))) {
+            if (sub == "scripts" || sub == "ccsds") && !id.is_empty() {
+                let ext = if sub == "scripts" { scripts::EXT } else { "xml" };
+                return match std::fs::read_to_string(a.missions_dir.join(sub).join(format!("{id}.{ext}"))) {
                     Ok(text) => json!({"type": "file", "req": req, "ok": true, "sub": sub, "id": id, "text": text}),
                     Err(e) => json!({"type": "file", "req": req, "ok": false, "error": e.to_string()}),
                 };
@@ -1246,17 +1301,24 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
             let id = jaci_sim::library::clean_id(msg.get("id").and_then(|x| x.as_str()).unwrap_or(""));
             let text = msg.get("text").and_then(|x| x.as_str()).unwrap_or("");
             let script = sub == "scripts";
-            if !(script || jaci_sim::library::KINDS.iter().any(|(k, _)| *k == sub)) || id.is_empty() {
+            let xml = sub == "ccsds";
+            if !(script || xml || jaci_sim::library::KINDS.iter().any(|(k, _)| *k == sub)) || id.is_empty() {
                 return json!({"type": "sim_result", "req": req, "ok": false, "error": "dê um nome ao arquivo (letras, números, - e _)"});
             }
-            let checked = if script { a.scripts.compile(text).map(|_| ()) } else { a.library.validate(sub, &id, text) };
+            let checked = if script {
+                a.scripts.compile(text).map(|_| ())
+            } else if xml {
+                jaci_sim::xtce::parse(text).map(|_| ())
+            } else {
+                a.library.validate(sub, &id, text)
+            };
             if let Err(e) = checked {
                 return json!({"type": "sim_result", "req": req, "ok": false, "error": e, "id": id});
             }
             if action == "file_validate" {
                 return json!({"type": "sim_result", "req": req, "ok": true, "message": "arquivo correto", "id": id});
             }
-            let path = a.missions_dir.join(sub).join(format!("{id}.{}", if script { scripts::EXT } else { "toml" }));
+            let path = a.missions_dir.join(sub).join(format!("{id}.{}", if script { scripts::EXT } else if xml { "xml" } else { "toml" }));
             if let Err(e) = std::fs::create_dir_all(a.missions_dir.join(sub)).and_then(|_| std::fs::write(&path, text)) {
                 return json!({"type": "sim_result", "req": req, "ok": false, "error": e.to_string()});
             }

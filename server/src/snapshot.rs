@@ -103,10 +103,12 @@ fn dictionary_map(a: &App) -> Value {
         }
     }
     for e in &w.externals {
-        let defs: Vec<Value> = jaci_sim::ccsds::NAV_POINTS
-            .iter()
-            .map(|(id, name, unit)| json!({"id": id, "name": name, "unit": unit, "group": "Navegação", "yellow": null, "red": null}))
-            .collect();
+        let defs: Vec<Value> = if e.points.is_empty() {
+            jaci_sim::ccsds::NAV_POINTS.iter().map(|(id, name, unit)| json!({"id": id, "name": name, "unit": unit, "group": "Navegação", "yellow": null, "red": null})).collect()
+        } else {
+            // Dicionário XTCE: nomes, unidades e limites de lá.
+            e.points.iter().map(|p| json!({"id": p.id, "name": p.name, "unit": p.unit, "group": "XTCE", "yellow": p.yellow, "red": p.red})).collect()
+        };
         m.insert(e.id.to_string(), json!(defs));
     }
     Value::Object(m)

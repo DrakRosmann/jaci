@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Exemplo de dicionário XTCE para o Jaci: um CubeSat que manda, no APID 0x210,
+  posição, tensão da bateria, temperatura do computador de bordo e modo.
+  Cada pacote: cabeçalho primário (6 bytes), tempo CUC (6 bytes) e os campos
+  abaixo, na ordem, big-endian: 3 floats de 32 bits, um uint16, um int16 e um
+  uint8 (17 bytes). Os aliases "jaci" põem latitude, longitude e altitude no
+  mapa; as faixas de alarme viram os limites amarelo e vermelho.
+-->
+<SpaceSystem name="CubeSat-Jaci" xmlns="http://www.omg.org/spec/XTCE/20180204">
+  <TelemetryMetaData>
+    <ParameterTypeSet>
+      <FloatParameterType name="Graus">
+        <UnitSet><Unit>°</Unit></UnitSet>
+        <FloatDataEncoding sizeInBits="32"/>
+      </FloatParameterType>
+      <FloatParameterType name="Quilometros">
+        <UnitSet><Unit>km</Unit></UnitSet>
+        <FloatDataEncoding sizeInBits="32"/>
+      </FloatParameterType>
+      <IntegerParameterType name="Volts">
+        <UnitSet><Unit>V</Unit></UnitSet>
+        <IntegerDataEncoding sizeInBits="16" encoding="unsigned">
+          <DefaultCalibrator>
+            <PolynomialCalibrator>
+              <Term exponent="1" coefficient="0.001"/>
+            </PolynomialCalibrator>
+          </DefaultCalibrator>
+        </IntegerDataEncoding>
+        <DefaultAlarm>
+          <StaticAlarmRanges>
+            <WarningRange minInclusive="6.6" maxInclusive="8.4"/>
+            <CriticalRange minInclusive="6.0" maxInclusive="8.6"/>
+          </StaticAlarmRanges>
+        </DefaultAlarm>
+      </IntegerParameterType>
+      <IntegerParameterType name="Celsius">
+        <UnitSet><Unit>°C</Unit></UnitSet>
+        <IntegerDataEncoding sizeInBits="16" encoding="twosComplement">
+          <DefaultCalibrator>
+            <PolynomialCalibrator>
+              <Term exponent="1" coefficient="0.01"/>
+            </PolynomialCalibrator>
+          </DefaultCalibrator>
+        </IntegerDataEncoding>
+        <DefaultAlarm>
+          <StaticAlarmRanges>
+            <WarningRange minInclusive="-10" maxInclusive="50"/>
+            <CriticalRange minInclusive="-20" maxInclusive="60"/>
+          </StaticAlarmRanges>
+        </DefaultAlarm>
+      </IntegerParameterType>
+      <IntegerParameterType name="Modo">
+        <IntegerDataEncoding sizeInBits="8" encoding="unsigned"/>
+      </IntegerParameterType>
+    </ParameterTypeSet>
+    <ParameterSet>
+      <Parameter name="LAT" parameterTypeRef="Graus" shortDescription="Latitude">
+        <AliasSet><Alias nameSpace="jaci" alias="nav.lat"/></AliasSet>
+      </Parameter>
+      <Parameter name="LON" parameterTypeRef="Graus" shortDescription="Longitude">
+        <AliasSet><Alias nameSpace="jaci" alias="nav.lon"/></AliasSet>
+      </Parameter>
+      <Parameter name="ALT" parameterTypeRef="Quilometros" shortDescription="Altitude">
+        <AliasSet><Alias nameSpace="jaci" alias="nav.alt"/></AliasSet>
+      </Parameter>
+      <Parameter name="BATT_V" parameterTypeRef="Volts" shortDescription="Tensão da bateria">
+        <AliasSet><Alias nameSpace="jaci" alias="eps.batt_v"/></AliasSet>
+      </Parameter>
+      <Parameter name="OBC_TEMP" parameterTypeRef="Celsius" shortDescription="Temperatura do computador de bordo">
+        <AliasSet><Alias nameSpace="jaci" alias="tcs.obc_temp"/></AliasSet>
+      </Parameter>
+      <Parameter name="MODE" parameterTypeRef="Modo" shortDescription="Modo (0 seguro, 1 nominal, 2 imageamento, 3 descarga)">
+        <AliasSet><Alias nameSpace="jaci" alias="eps.mode"/></AliasSet>
+      </Parameter>
+    </ParameterSet>
+    <ContainerSet>
+      <SequenceContainer name="Housekeeping">
+        <EntryList>
+          <ParameterRefEntry parameterRef="LAT"/>
+          <ParameterRefEntry parameterRef="LON"/>
+          <ParameterRefEntry parameterRef="ALT"/>
+          <ParameterRefEntry parameterRef="BATT_V"/>
+          <ParameterRefEntry parameterRef="OBC_TEMP"/>
+          <ParameterRefEntry parameterRef="MODE"/>
+        </EntryList>
+        <BaseContainer containerRef="CCSDSPacket">
+          <RestrictionCriteria>
+            <Comparison parameterRef="CCSDS_APID" value="0x210"/>
+          </RestrictionCriteria>
+        </BaseContainer>
+      </SequenceContainer>
+    </ContainerSet>
+  </TelemetryMetaData>
+</SpaceSystem>

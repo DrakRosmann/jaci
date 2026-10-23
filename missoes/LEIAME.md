@@ -28,4 +28,8 @@ cada arquivo salvo pelo editor do console **Instrutor**, que também confere e m
   Liga e desliga no console **Instrutor**, ou pelo cenário (`scripts = ["nome"]`). Erro ou laço
   sem fim desliga o script, com o motivo no registro de eventos.
 
+* `ccsds/<nome>.xml` — dicionários de telemetria CCSDS em XTCE: cada contêiner com o APID vira um
+  pacote de layout fixo, com unidades, calibração e alarmes (veja `cubesat.xml` e
+  `docs/protocolo.md`).
+
 O id é o nome do arquivo e não pode repetir um do catálogo ou um cenário pronto.

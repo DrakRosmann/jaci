@@ -7,7 +7,7 @@ import { Panel, toast } from '../components/ui'
 import { t, tx } from '../lib/i18n'
 import { store } from '../lib/store'
 
-type Sub = 'veiculos' | 'cenarios' | 'procedimentos' | 'scripts'
+type Sub = 'veiculos' | 'cenarios' | 'procedimentos' | 'scripts' | 'ccsds'
 
 interface FileEntry {
   sub: Sub
@@ -21,10 +21,55 @@ const SUBS: [Sub, string][] = [
   ['veiculos', 'Veículos'],
   ['procedimentos', 'Procedimentos'],
   ['scripts', 'Scripts'],
+  ['ccsds', 'Dicionários CCSDS (XTCE)'],
 ]
 
 /** Ponto de partida de um arquivo novo. */
 const TEMPLATES: Record<Sub, string> = {
+  ccsds: `<?xml version="1.0" encoding="UTF-8"?>
+<!-- Pacote no APID 0x220: campos em sequência, big-endian, depois do tempo CUC. -->
+<SpaceSystem name="Meu-Satelite">
+  <TelemetryMetaData>
+    <ParameterTypeSet>
+      <FloatParameterType name="Graus">
+        <UnitSet><Unit>°</Unit></UnitSet>
+        <FloatDataEncoding sizeInBits="32"/>
+      </FloatParameterType>
+      <IntegerParameterType name="Volts">
+        <UnitSet><Unit>V</Unit></UnitSet>
+        <IntegerDataEncoding sizeInBits="16" encoding="unsigned">
+          <DefaultCalibrator><PolynomialCalibrator><Term exponent="1" coefficient="0.001"/></PolynomialCalibrator></DefaultCalibrator>
+        </IntegerDataEncoding>
+        <DefaultAlarm><StaticAlarmRanges>
+          <WarningRange minInclusive="6.6" maxInclusive="8.4"/>
+          <CriticalRange minInclusive="6.0" maxInclusive="8.6"/>
+        </StaticAlarmRanges></DefaultAlarm>
+      </IntegerParameterType>
+    </ParameterTypeSet>
+    <ParameterSet>
+      <Parameter name="LAT" parameterTypeRef="Graus" shortDescription="Latitude">
+        <AliasSet><Alias nameSpace="jaci" alias="nav.lat"/></AliasSet>
+      </Parameter>
+      <Parameter name="LON" parameterTypeRef="Graus" shortDescription="Longitude">
+        <AliasSet><Alias nameSpace="jaci" alias="nav.lon"/></AliasSet>
+      </Parameter>
+      <Parameter name="BATT_V" parameterTypeRef="Volts" shortDescription="Tensão da bateria"/>
+    </ParameterSet>
+    <ContainerSet>
+      <SequenceContainer name="Housekeeping">
+        <EntryList>
+          <ParameterRefEntry parameterRef="LAT"/>
+          <ParameterRefEntry parameterRef="LON"/>
+          <ParameterRefEntry parameterRef="BATT_V"/>
+        </EntryList>
+        <BaseContainer containerRef="CCSDSPacket">
+          <RestrictionCriteria><Comparison parameterRef="CCSDS_APID" value="0x220"/></RestrictionCriteria>
+        </BaseContainer>
+      </SequenceContainer>
+    </ContainerSet>
+  </TelemetryMetaData>
+</SpaceSystem>
+`,
   scripts: `// Roda a cada segundo de simulação. Veja missoes/LEIAME.md.
 let v = vehicle("Estação espacial");
 if v < 0 { return; }
@@ -173,7 +218,7 @@ export function Missions() {
               ))}
             </select>
             <input className="mono" value={id} onChange={(e) => setId(e.target.value)} placeholder={t('nome-do-arquivo')} style={{ flex: 1 }} aria-label={t('Nome do arquivo')} />
-            <span className="mono small muted">{sub === 'scripts' ? '.rhai' : '.toml'}</span>
+            <span className="mono small muted">{sub === 'scripts' ? '.rhai' : sub === 'ccsds' ? '.xml' : '.toml'}</span>
           </div>
           <textarea className="mono" value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} rows={22} placeholder={t('Abra um arquivo ou comece um novo.')} />
           {msg && <pre className={`small ${msg.ok ? 'good' : 'bad'}`} style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{msg.text}</pre>}

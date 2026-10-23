@@ -170,6 +170,20 @@ telecomandos para ele voltam para o endereço e a porta de onde veio a telemetri
 0x100 + id do veículo, com todos os pontos na ordem do dicionário de telemetria dele (o mesmo do
 `hello`).
 
+### Dicionários XTCE
+
+Outros pacotes de telemetria são descritos em XTCE (`missoes/ccsds/*.xml`, veja
+[`cubesat.xml`](../missoes/ccsds/cubesat.xml)). Cada `SequenceContainer` com
+`RestrictionCriteria/Comparison parameterRef="CCSDS_APID" value="…"` vira um pacote de layout fixo:
+os parâmetros do `EntryList`, na ordem, big-endian, logo depois do tempo CUC, sem preenchimento.
+Tipos: `FloatParameterType` (32 ou 64 bits) e `IntegerParameterType` (8, 16, 24, 32 ou 64 bits,
+`encoding="unsigned"` ou com sinal), com `Unit`, `PolynomialCalibrator` e `StaticAlarmRanges`
+(`WarningRange` → limite amarelo, `CriticalRange` → vermelho, que geram alarmes como nos veículos
+simulados). O nome do parâmetro é o `shortDescription`; o id no Jaci é o `Alias nameSpace="jaci"`
+(use `nav.lat`, `nav.lon` e `nav.alt` para o veículo aparecer no mapa) ou o nome. O veículo externo
+se chama `<SpaceSystem> (<contêiner>)`. APIDs sem dicionário seguem o formato de pares acima.
+`computador-de-bordo --xtce missoes/ccsds/cubesat.xml` manda os pacotes de um dicionário.
+
 ### Telecomando (tipo 1)
 
 Sem cabeçalho secundário. Os dados são o comando em JSON (UTF-8), igual ao da interface:

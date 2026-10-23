@@ -266,8 +266,12 @@ jaci --ccsds-out 127.0.0.1:10016               # manda a telemetria dos simulado
 ```
 
 Cada APID novo aparece como um veículo externo, com mapa, telemetria e comandos (que voltam como
-pacotes de telecomando para o endereço de onde a telemetria veio). O formato está em
-[`docs/protocolo.md`](docs/protocolo.md).
+pacotes de telecomando para o endereço de onde a telemetria veio). Além do pacote de navegação
+(APID 0x200), qualquer pacote pode ser descrito num dicionário XTCE em `missoes/ccsds/*.xml`
+(tipos, codificação, calibração, unidades e faixas de alarme), que vira pontos de telemetria com
+nome, unidade e alarmes amarelos e vermelhos; o editor do Instrutor confere o XML. O exemplo
+`cubesat.xml` descreve um CubeSat no APID 0x210, e `computador-de-bordo --xtce
+missoes/ccsds/cubesat.xml` o simula. O formato está em [`docs/protocolo.md`](docs/protocolo.md).
 
 ## Kerbal Space Program (kOS)
 
@@ -350,7 +354,8 @@ da Terra, corrige a trajetória duas vezes, chega com o periastro pedido e entra
   espacial é simplificado.
 * UT1 é tratado como igual ao UTC (diferença abaixo de 0,9 s); a tabela de segundos intercalares
   (`sim/src/time.rs`) precisa de uma linha nova quando o IERS anunciar um.
-* Telemetria do veículo externo por CCSDS: só o pacote de navegação (APID 0x200).
+* XTCE: o subconjunto de telemetria descrito em `docs/protocolo.md` (contêineres de layout fixo
+  por APID); telecomando continua em JSON.
 
 ## Créditos
 

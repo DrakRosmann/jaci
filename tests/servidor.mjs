@@ -6,6 +6,7 @@
 // JACI_BIN aponta outro binário; ONLY=texto roda só os cenários com o texto no nome.
 
 import { spawn } from 'node:child_process'
+import { createSocket } from 'node:dgram'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, appendFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -502,6 +503,67 @@ const cases = [
           c2.close()
         }
       } finally {
+        s.close()
+        rmSync(dir, { recursive: true, force: true })
+      }
+    },
+  ],
+  [
+    'ccsds: dicionário XTCE, layout fixo, limites e o pacote 0x200 antigo',
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'jaci-xtce-'))
+      cpSync(new URL('../missoes', import.meta.url).pathname, dir, { recursive: true })
+      const udp = port + 2000
+      const s = await server('ksp', ['--missions-dir', dir, '--ccsds-in', `127.0.0.1:${udp}`])
+      const sock = createSocket('udp4')
+      // Cabeçalho primário + tempo CUC (4+2 bytes) + dados.
+      const packet = (apid, seq, data) => {
+        const body = Buffer.concat([Buffer.from([0, 0, 0, 0, 0, 0]), data])
+        const h = Buffer.alloc(6)
+        h.writeUInt16BE((1 << 11) | apid, 0)
+        h.writeUInt16BE((3 << 14) | seq, 2)
+        h.writeUInt16BE(body.length - 1, 4)
+        return Buffer.concat([h, body])
+      }
+      const cubesat = (batt) => {
+        const d = Buffer.alloc(17)
+        d.writeFloatBE(-2.5, 0)
+        d.writeFloatBE(-44.25, 4)
+        d.writeFloatBE(512, 8)
+        d.writeUInt16BE(Math.round(batt * 1000), 12)
+        d.writeInt16BE(-1250, 14)
+        d.writeUInt8(1, 16)
+        return d
+      }
+      const send = (b) => new Promise((r) => sock.send(b, udp, '127.0.0.1', r))
+      try {
+        const c = s.ws
+        await send(packet(0x210, 1, cubesat(7.42)))
+        const snap = await until(c, 'CubeSat no instantâneo', (x) => x.vehicles.some((v) => v.name === 'CubeSat-Jaci (Housekeeping)'), 5000)
+        const sat = snap.vehicles.find((v) => v.name === 'CubeSat-Jaci (Housekeeping)')
+        assert(Math.abs(sat.tm['eps.batt_v'] - 7.42) < 0.001 && Math.abs(sat.tm['tcs.obc_temp'] + 12.5) < 0.001, `valores ${JSON.stringify(sat.tm)}`)
+        assert(Math.abs(sat.lat + 2.5) < 1e-4 && Math.abs(sat.lon + 44.25) < 1e-4 && sat.alt === 512, 'posição pelos aliases')
+        const dict = await c.request({ type: 'dictionary' })
+        const bat = dict.dictionary[String(sat.id)].find((d) => d.id === 'eps.batt_v')
+        assert(bat && bat.unit === 'V' && bat.red[0] === 6, `dicionário ${JSON.stringify(bat)}`)
+        // Bateria abaixo do crítico: alarme vermelho no veículo externo.
+        await send(packet(0x210, 2, cubesat(5.8)))
+        await until(c, 'alarme vermelho', (x) => x.alarms.some((a) => a.vehicle === sat.id && a.point === 'eps.batt_v' && a.level === 'red' && a.active), 8000)
+        // Pacote curto demais é recusado sem derrubar nada.
+        await send(packet(0x210, 3, Buffer.alloc(4)))
+        // O pacote antigo de navegação (pares índice, valor) continua valendo.
+        const nav = Buffer.alloc(12)
+        nav.writeUInt16BE(1, 0)
+        nav.writeFloatBE(-5.9, 2)
+        nav.writeUInt16BE(3, 6)
+        nav.writeFloatBE(80, 8)
+        await send(packet(0x200, 4, nav))
+        await until(c, 'veículo 0x200', (x) => x.vehicles.some((v) => v.name.includes('0x200') && Math.abs(v.tm['nav.lat'] + 5.9) < 1e-4), 5000)
+        // Dicionário com erro aparece no editor.
+        const bad = await c.request({ type: 'sim', action: 'file_validate', sub: 'ccsds', id: 'ruim', text: '<SpaceSystem name="x"/>' })
+        assert(!bad.ok && /APID/.test(bad.error), `validação XTCE: ${bad.error}`)
+      } finally {
+        sock.close()
         s.close()
         rmSync(dir, { recursive: true, force: true })
       }

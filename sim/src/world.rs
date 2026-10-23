@@ -45,6 +45,19 @@ pub struct External {
     /// Instante (simulação) do último pacote.
     pub last: f64,
     pub packets: u64,
+    /// Pontos do dicionário XTCE (vazio: o pacote de navegação 0x200).
+    #[serde(default)]
+    pub points: Vec<ExternalPoint>,
+}
+
+/// Ponto de telemetria de um veículo externo, do dicionário XTCE.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ExternalPoint {
+    pub id: String,
+    pub name: String,
+    pub unit: String,
+    pub yellow: Option<(f64, f64)>,
+    pub red: Option<(f64, f64)>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -216,6 +229,11 @@ impl World {
 
     /// Atualiza (ou cria) um veículo externo com um pacote de telemetria.
     pub fn external_update(&mut self, apid: u16, points: Vec<(String, f64)>) -> VehicleId {
+        self.external_update_with(apid, points, None)
+    }
+
+    /// Como `external_update`, com o pacote do dicionário XTCE (nome e limites).
+    pub fn external_update_with(&mut self, apid: u16, points: Vec<(String, f64)>, def: Option<&crate::xtce::PacketDef>) -> VehicleId {
         let t = self.t;
         if let Some(e) = self.externals.iter_mut().find(|e| e.apid == apid) {
             for (k, v) in points {
@@ -230,7 +248,14 @@ impl World {
         }
         let id = self.next_id;
         self.next_id += 1;
-        self.externals.push(External { id, name: format!("Veículo externo (APID 0x{apid:03X})"), apid, tm: points, last: t, packets: 1 });
+        let (name, defs) = match def {
+            Some(d) => (
+                format!("{} ({})", d.system, d.container),
+                d.fields.iter().map(|f| ExternalPoint { id: f.id.clone(), name: f.name.clone(), unit: f.unit.clone(), yellow: f.yellow, red: f.red }).collect(),
+            ),
+            None => (format!("Veículo externo (APID 0x{apid:03X})"), Vec::new()),
+        };
+        self.externals.push(External { id, name, apid, tm: points, last: t, packets: 1, points: defs });
         self.event(Some(id), Level::Good, format!("Telemetria CCSDS recebida: novo veículo externo, APID 0x{apid:03X}"));
         id
     }
@@ -494,6 +519,7 @@ impl World {
 
     fn limits(&mut self) {
         let mut new_alarms = Vec::new();
+        let mut checks: Vec<(VehicleId, String, String, String, f64, LimitState)> = Vec::new();
         for v in &self.vehicles {
             if v.kind == Kind::Debris || v.phase == Phase::Destroyed {
                 continue;
@@ -513,23 +539,34 @@ impl World {
                 if d.id.starts_with("adcs.") && (!matches!(v.phase, Phase::Orbit | Phase::Escape) || slewing) {
                     continue;
                 }
-                let st = d.check(*val);
-                let prev = self.limit_states.iter().position(|(id, p, _)| *id == v.id && *p == d.id);
-                let old = prev.map(|i| self.limit_states[i].2).unwrap_or(LimitState::Nominal);
-                if st != old {
-                    match prev {
-                        Some(i) => self.limit_states[i].2 = st,
-                        None => self.limit_states.push((v.id, d.id.clone(), st)),
-                    }
-                    if st != LimitState::Nominal {
-                        new_alarms.push((v.id, d.id.clone(), d.name.clone(), st, *val, d.unit.to_string()));
-                    } else {
-                        for a in self.alarms.iter_mut().filter(|a| a.vehicle == v.id && a.point == d.id && a.active) {
-                            a.active = false;
-                            if let Some(l) = self.training.alarms.iter_mut().find(|l| l.id == a.id) {
-                                l.cleared_at.get_or_insert(self.t);
-                            }
-                        }
+                checks.push((v.id, d.id.clone(), d.name.clone(), d.unit.to_string(), *val, d.check(*val)));
+            }
+        }
+        // Veículos externos com limites no dicionário (XTCE).
+        for e in &self.externals {
+            for p in e.points.iter().filter(|p| p.yellow.is_some() || p.red.is_some()) {
+                let Some((_, val)) = e.tm.iter().find(|(k, _)| *k == p.id) else { continue };
+                let def = telemetry::TmDef { id: String::new(), name: String::new(), unit: "", group: "", yellow: p.yellow, red: p.red };
+                checks.push((e.id, p.id.clone(), p.name.clone(), p.unit.clone(), *val, def.check(*val)));
+            }
+        }
+        for (vid, point, name, unit, val, st) in checks {
+            let prev = self.limit_states.iter().position(|(id, p, _)| *id == vid && *p == point);
+            let old = prev.map(|i| self.limit_states[i].2).unwrap_or(LimitState::Nominal);
+            if st == old {
+                continue;
+            }
+            match prev {
+                Some(i) => self.limit_states[i].2 = st,
+                None => self.limit_states.push((vid, point.clone(), st)),
+            }
+            if st != LimitState::Nominal {
+                new_alarms.push((vid, point, name, st, val, unit));
+            } else {
+                for a in self.alarms.iter_mut().filter(|a| a.vehicle == vid && a.point == point && a.active) {
+                    a.active = false;
+                    if let Some(l) = self.training.alarms.iter_mut().find(|l| l.id == a.id) {
+                        l.cleared_at.get_or_insert(self.t);
                     }
                 }
             }
