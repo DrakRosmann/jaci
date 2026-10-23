@@ -1779,3 +1779,16 @@ tr.sel td {
   padding: 2px 6px;
   border-radius: 4px;
 }
+
+/* Console do KSP: as duas pontes (kOS e kRPC) no painel de ligação. */
+.ksp-link + .ksp-link {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+.ksp-link h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  text-transform: uppercase;
+}

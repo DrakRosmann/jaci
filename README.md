@@ -326,10 +326,16 @@ nome, unidade e alarmes amarelos e vermelhos; o editor do Instrutor confere o XM
 `cubesat.xml` descreve um CubeSat no APID 0x210, e `computador-de-bordo --xtce
 missoes/ccsds/cubesat.xml` o simula. O formato está em [`docs/protocolo.md`](docs/protocolo.md).
 
-## Kerbal Space Program (kOS)
+## Kerbal Space Program (kOS ou kRPC)
 
 O Jaci acompanha e comanda naves do [Kerbal Space Program](https://www.kerbalspaceprogram.com/)
-pelo [kOS](https://ksp-kos.github.io/KOS_DOC/), o mod de computadores de bordo programáveis. Um
+por um de dois mods: o [kOS](https://ksp-kos.github.io/KOS_DOC/) (por arquivos, veja abaixo) ou o
+[kRPC](https://krpc.github.io/krpc/) (pela rede, em [Pelo kRPC](#pelo-krpc)). As duas pontes dão a
+mesma telemetria e os mesmos comandos.
+
+### Pelo kOS
+
+O kOS é o mod de computadores de bordo programáveis. Um
 script do kOS (`ksp/Script/jaci/jaci.ks`) roda na nave, escreve a telemetria e executa os comandos;
 os dois conversam por arquivos na pasta `Ships/Script` do KSP, que é o volume `0:` (Archive) do kOS.
 Não precisa de outro mod nem de rede.
@@ -376,6 +382,30 @@ naves carregadas (a ativa e as que estão a menos de ~2,5 km dela). O formato do
 [`docs/protocolo.md`](docs/protocolo.md); `ksp/verificar/verificar.sh` compila os scripts com o
 compilador do próprio kOS, sem abrir o jogo.
 
+### Pelo kRPC
+
+O kRPC abre um servidor RPC dentro do jogo (TCP, porta 50000), e o Jaci conversa com ele pela rede:
+não há scripts nas naves nem pasta do jogo para achar, e o KSP pode estar em outro computador.
+
+```bash
+ckan install kRPC         # no jogo: janela do kRPC → Start server (e aceite a conexão do Jaci)
+jaci --krpc --open        # 127.0.0.1:50000; ou --krpc 192.168.0.10:50000
+```
+
+Também dá para ligar pelo console **KSP** ("Ligar pelo kRPC"); o kOS e o kRPC podem estar ligados
+ao mesmo tempo. Diferenças em relação ao kOS:
+
+* O Jaci acompanha a **nave ativa** (trocar de nave no jogo traz a outra).
+* A subida automática, a circularização e a execução de manobras rodam **no Jaci**, a 10 Hz, com a
+  mesma lógica do script do kOS, comandando o piloto automático e a potência do kRPC.
+* Os modos de atitude do navball (prógrado, radial, alvo, manter…) usam o **SAS** da nave (precisa
+  de piloto ou núcleo de sonda com esse nível); rumo e arfagem usam o piloto automático do kRPC. O
+  modo "Sol" não existe pelo kRPC.
+* O kRPC não depende do CommNet: com a nave sem antena, a telemetria continua.
+
+A ponte (`server/src/krpc.rs`) fala o protocolo do kRPC direto (protobuf com o tamanho em varint) e
+é testada contra um servidor kRPC de mentira: telemetria, comandos e a execução de uma manobra.
+
 ![Console do KSP](docs/img/ksp.png)
 
 ## Testes
@@ -385,6 +415,7 @@ cargo test --release            # núcleo: órbitas, efemérides, atmosfera, sub
 cd web && npm test              # interface: traduções
 node tests/servidor.mjs         # servidor de ponta a ponta (depois de cargo build --release),
                                 # inclusive a ponte do KSP com um kOS de mentira
+                                # (a do kRPC tem um servidor de mentira no cargo test)
 ```
 
 Os voos completos (`sim/tests/missoes.rs`) contam, votam e lançam cada cenário e conferem o

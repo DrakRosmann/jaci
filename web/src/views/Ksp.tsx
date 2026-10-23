@@ -1,5 +1,6 @@
-// Console do Kerbal Space Program: a ligação com o kOS e o controle das naves
-// do jogo (voo, lançamento automático, atitude, manobras, sistemas e recursos).
+// Console do Kerbal Space Program: a ligação com o jogo (pelo kOS, por
+// arquivos, ou pelo kRPC, pela rede) e o controle das naves (voo, lançamento
+// automático, atitude, manobras, sistemas e recursos).
 
 import { useMemo, useState } from 'react'
 import { Chart, COLORS } from '../components/Chart'
@@ -22,7 +23,7 @@ export function KspView() {
         <Connection />
         <Panel title={t('Naves do KSP')} className="span-2" flush>
           {vessels.length === 0 ? (
-            <Empty>{ksp ? t('Nenhuma nave com a ponte do kOS ainda. Veja os passos ao lado.') : t('Ligue o Jaci ao KSP para ver as naves.')}</Empty>
+            <Empty>{ksp ? t('Nenhuma nave com a ponte ainda. Veja os passos ao lado.') : t('Ligue o Jaci ao KSP para ver as naves.')}</Empty>
           ) : (
             <table>
               <thead>
@@ -63,6 +64,20 @@ function modeName(m: string): string {
 }
 
 function Connection() {
+  return (
+    <Panel title={t('Ligação com o KSP')}>
+      <div className="grid">
+        <KosLink />
+        <KrpcLink />
+      </div>
+    </Panel>
+  )
+}
+
+const ok = (b: boolean) => <span className={b ? 'good' : 'bad'}>{b ? '✓' : '✗'}</span>
+
+/** Ponte do kOS: scripts na pasta do jogo, conversa por arquivos. */
+function KosLink() {
   const ksp = useStore((s) => s.snap?.ksp ?? null)
   const [dir, setDir] = useState('')
   const connect = async () => {
@@ -73,10 +88,10 @@ function Connection() {
     const r = await store.sim('ksp_patch')
     toast(r.ok ? tx(r.message) : tx(r.error), r.ok ? 'good' : 'bad')
   }
-  const ok = (b: boolean) => <span className={b ? 'good' : 'bad'}>{b ? '✓' : '✗'}</span>
   return (
-    <Panel title={t('Ligação com o KSP (kOS)')}>
-      {ksp ? (
+    <section className="ksp-link">
+      <h4>kOS · {t('por arquivos')}</h4>
+      {ksp?.files ? (
         <div className="grid" style={{ overflowWrap: 'anywhere' }}>
           <div className="small">
             <div>
@@ -111,11 +126,63 @@ function Connection() {
           <div className="small muted">{t('O Jaci conversa com o kOS por arquivos na pasta Ships/Script do KSP. Deixe em branco para procurar a pasta do Steam.')}</div>
           <input value={dir} onChange={(e) => setDir(e.target.value)} placeholder={t('pasta do Kerbal Space Program')} />
           <button className="primary" onClick={connect}>
-            {t('Ligar ao KSP')}
+            {t('Ligar pelo kOS')}
           </button>
         </div>
       )}
-    </Panel>
+    </section>
+  )
+}
+
+/** Ponte do kRPC: o servidor RPC dentro do jogo, pela rede; não precisa de scripts. */
+function KrpcLink() {
+  const k = useStore((s) => s.snap?.ksp?.krpc ?? null)
+  const [addr, setAddr] = useState('127.0.0.1:50000')
+  const connect = async () => {
+    const r = await store.sim('krpc_connect', { value: addr })
+    toast(r.ok ? tx(r.message) : tx(r.error), r.ok ? 'good' : 'bad')
+  }
+  const disconnect = async () => {
+    const r = await store.sim('krpc_disconnect')
+    toast(r.ok ? tx(r.message) : tx(r.error), r.ok ? 'good' : 'bad')
+  }
+  return (
+    <section className="ksp-link">
+      <h4>kRPC · {t('pela rede')}</h4>
+      {k ? (
+        <div className="grid" style={{ overflowWrap: 'anywhere' }}>
+          <div className="small">
+            <div>
+              {ok(k.connected)} <span className="mono">{k.addr}</span> · {tx(k.message)}
+            </div>
+            {k.vessel && (
+              <div>
+                {t('Nave ativa')}: <b>{k.vessel}</b>
+              </div>
+            )}
+          </div>
+          {!k.connected && (
+            <ol className="small" style={{ margin: 0, paddingLeft: 18 }}>
+              <li>
+                {t('Instale o kRPC (pelo CKAN:')} <span className="mono">ckan install kRPC</span>).
+              </li>
+              <li>{t('No jogo, abra a janela do kRPC e ligue o servidor (Start server).')}</li>
+              <li>{t('Aceite a conexão do Jaci quando o kRPC perguntar (ou marque para aceitar sempre).')}</li>
+            </ol>
+          )}
+          <div className="small muted">{t('O Jaci acompanha a nave ativa; subida, circularização e execução de manobras rodam no Jaci.')}</div>
+          <button onClick={disconnect}>{t('Desligar o kRPC')}</button>
+        </div>
+      ) : (
+        <div className="grid">
+          <div className="small muted">{t('Alternativa ao kOS: o mod kRPC abre um servidor dentro do jogo e o Jaci conversa com ele pela rede, sem scripts nas naves.')}</div>
+          <input value={addr} onChange={(e) => setAddr(e.target.value)} placeholder="127.0.0.1:50000" aria-label={t('Endereço do servidor kRPC')} />
+          <button className="primary" onClick={connect}>
+            {t('Ligar pelo kRPC')}
+          </button>
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -128,7 +195,11 @@ function Vessel({ v }: { v: Vehicle }) {
   const tracks = useMemo<Track[]>(() => (pred.points.length ? [{ vehicle: v.id, points: pred.points.map((p) => [p[2], p[1]] as [number, number]), color: '#4cc3ff' }] : []), [pred, v.id])
   return (
     <>
-      {lost && <div className="banner alarm">{t('Sem sinal do kOS')}: {v.name} — {t('a nave saiu de foco, perdeu a conexão com o KSC ou o script parou')}</div>}
+      {lost && (
+        <div className="banner alarm">
+          {k.via === 'kRPC' ? t('Sem sinal do kRPC') : t('Sem sinal do kOS')}: {v.name} — {k.via === 'kRPC' ? t('a nave deixou de ser a ativa ou o servidor do kRPC parou') : t('a nave saiu de foco, perdeu a conexão com o KSC ou o script parou')}
+        </div>
+      )}
       {k.countdown && (
         <div className="banner warn" style={{ fontSize: 22, textAlign: 'center' }}>
           T−{Math.ceil(k.countdown.t_minus)} s · {t('lançamento automático para')} {num(k.countdown.apo, 0)} km, {t('rumo')} {num(k.countdown.heading, 0)}°
@@ -271,7 +342,7 @@ function AutoLaunch({ v }: { v: Vehicle }) {
   return (
     <Panel title={t('Lançamento automático')}>
       <div className="small muted" style={{ marginBottom: 8 }}>
-        {t('O kOS acende o primeiro estágio, faz a curva de gravidade, separa os estágios vazios, corta no apoastro alvo e circulariza fora da atmosfera.')}
+        {t('O piloto automático acende o primeiro estágio, faz a curva de gravidade, separa os estágios vazios, corta no apoastro alvo e circulariza fora da atmosfera.')}
       </div>
       <div className="form">
         <label>{t('Apoastro alvo')} (km)</label>

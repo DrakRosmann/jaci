@@ -1,10 +1,11 @@
-//! Integração com o Kerbal Space Program pelo kOS.
+//! Integração com o Kerbal Space Program pelo kOS (e pelo kRPC, em krpc.rs).
 //!
 //! O script `jaci.ks` roda no computador kOS de cada nave e conversa com o
 //! Jaci por arquivos na pasta `Ships/Script/jaci` do KSP (o volume 0 do kOS):
 //! `tm-<id>.txt`, que ele escreve (telemetria, respostas e eventos), e
 //! `cmd-<id>.txt`, que o Jaci reescreve (comandos numerados). O formato está
-//! em docs/protocolo.md.
+//! em docs/protocolo.md. A ponte do kRPC produz as mesmas linhas e aceita os
+//! mesmos comandos, então as naves das duas pontes são tratadas igual.
 
 use jaci_sim::{
     commands::{ArgDef, CmdDef, Command},
@@ -104,6 +105,8 @@ pub struct KspVessel {
     offset: u64,
     pub countdown: Option<Countdown>,
     pub resources: Vec<(String, f64, f64)>,
+    /// Por qual ponte a nave fala: "kOS" ou "kRPC".
+    pub via: &'static str,
 }
 
 pub struct KspLink {
@@ -114,6 +117,10 @@ pub struct KspLink {
     pub patch_installed: bool,
     pub kos_installed: bool,
     pub mm_installed: bool,
+    /// A ponte do kOS (por arquivos) está ligada.
+    pub kos: bool,
+    /// A ponte do kRPC (pela rede), se ligada.
+    pub krpc: Option<crate::krpc::Bridge>,
     last_count: Instant,
     /// Ids próprios, longe dos veículos simulados (o mundo recomeça ao trocar de cenário).
     next_id: u32,
@@ -147,9 +154,40 @@ impl KspLink {
             dir,
             vessels: Vec::new(),
             session,
+            kos: true,
+            krpc: None,
             last_count: Instant::now(),
             next_id: FIRST_ID,
         })
+    }
+
+    /// Só com o kRPC: sem pasta do jogo nem scripts do kOS.
+    pub fn without_kos() -> Self {
+        KspLink {
+            ksp_dir: PathBuf::new(),
+            dir: PathBuf::new(),
+            vessels: Vec::new(),
+            session: String::new(),
+            patch_installed: false,
+            kos_installed: false,
+            mm_installed: false,
+            kos: false,
+            krpc: None,
+            last_count: Instant::now(),
+            next_id: FIRST_ID,
+        }
+    }
+
+    /// Fica com as naves e a ponte do kRPC de uma ligação anterior.
+    pub fn adopt(&mut self, old: KspLink) {
+        self.krpc = old.krpc;
+        self.vessels = old.vessels;
+        self.next_id = self.next_id.max(old.next_id);
+    }
+
+    /// Liga (ou religa em outro endereço) a ponte do kRPC.
+    pub fn connect_krpc(&mut self, addr: &str) {
+        self.krpc = Some(crate::krpc::Bridge::start(addr));
     }
 
     /// Instala o patch do Module Manager que põe o kOS nas peças de comando.
@@ -167,6 +205,46 @@ impl KspLink {
 
     /// Lê o que as naves escreveram desde a última vez.
     pub fn poll(&mut self, world: &mut World) {
+        if self.kos {
+            self.poll_files(world);
+        }
+        self.poll_krpc(world);
+        self.countdowns(world);
+        // Comandos sem resposta: a ponte parou, ou a nave perdeu o sinal.
+        for v in &mut self.vessels {
+            for (_, _, rec) in &v.pending {
+                if let Some(c) = world.commands.iter_mut().find(|c| c.id == *rec && c.status == CmdStatus::Queued) {
+                    if world.t - c.sent > 30.0 && v.age() > 5.0 {
+                        c.status = CmdStatus::Failed;
+                        c.message = format!("sem resposta do {}", v.via);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Linhas que a thread do kRPC produziu.
+    fn poll_krpc(&mut self, world: &mut World) {
+        let Some(b) = &self.krpc else { return };
+        for (uid, line) in b.drain() {
+            let idx = match self.vessels.iter().position(|v| v.uid == uid) {
+                Some(i) => i,
+                None => {
+                    let id = self.next_id;
+                    self.next_id += 1;
+                    let mut v = KspVessel::new(id, &uid);
+                    v.via = "kRPC";
+                    self.vessels.push(v);
+                    world.event(Some(id), Level::Good, "KSP: nave ativa pelo kRPC");
+                    self.vessels.len() - 1
+                }
+            };
+            self.vessels[idx].line(&line, world);
+        }
+    }
+
+    /// Arquivos que os scripts do kOS escreveram.
+    fn poll_files(&mut self, world: &mut World) {
         let Ok(entries) = fs::read_dir(&self.dir) else { return };
         for e in entries.flatten() {
             let name = e.file_name().to_string_lossy().to_string();
@@ -190,18 +268,6 @@ impl KspLink {
             let lines = read_new(&path, &mut self.vessels[idx].offset);
             for line in lines {
                 self.vessels[idx].line(&line, world);
-            }
-        }
-        self.countdowns(world);
-        // Comandos sem resposta: o kOS parou, ou a nave perdeu o sinal.
-        for v in &mut self.vessels {
-            for (_, _, rec) in &v.pending {
-                if let Some(c) = world.commands.iter_mut().find(|c| c.id == *rec && c.status == CmdStatus::Queued) {
-                    if world.t - c.sent > 30.0 && v.age() > 5.0 {
-                        c.status = CmdStatus::Failed;
-                        c.message = "sem resposta do kOS".into();
-                    }
-                }
             }
         }
     }
@@ -250,12 +316,17 @@ impl KspLink {
             sent: world.t,
             exec_at: world.t,
             status: CmdStatus::Queued,
-            message: "aguardando o kOS".into(),
+            message: format!("aguardando o {}", v.via),
             cmd: None,
         });
         v.pending.push((seq, text.to_string(), rec));
         if v.pending.len() > 40 {
             v.pending.drain(..v.pending.len() - 40);
+        }
+        if v.via == "kRPC" {
+            let b = self.krpc.as_ref().ok_or("a ponte do kRPC está desligada")?;
+            b.send(seq, text);
+            return Ok(rec);
         }
         // Reescreve o arquivo inteiro e troca de uma vez (o kOS nunca lê pela metade).
         let mut body = format!("S {session}\n");
@@ -387,6 +458,7 @@ impl KspVessel {
             offset: 0,
             countdown: None,
             resources: Vec::new(),
+            via: "kOS",
         }
     }
 
@@ -696,6 +768,7 @@ pub fn vehicle_json(v: &KspVessel, world_t: f64) -> Value {
     let fin = |x: f64| if x.is_finite() { json!(x) } else { Value::Null };
     let ksp = json!({
         "uid": v.uid,
+        "via": v.via,
         "situation": v.situation,
         "mode": v.mode,
         "steer": v.steer,
@@ -714,7 +787,7 @@ pub fn vehicle_json(v: &KspVessel, world_t: f64) -> Value {
         "id": v.id,
         "name": v.name,
         "kind": "ksp",
-        "kind_name": "Nave do KSP (kOS)",
+        "kind_name": if v.via == "kRPC" { "Nave do KSP (kRPC)" } else { "Nave do KSP (kOS)" },
         "phase": phase,
         "phase_name": phase_name,
         "central": v.body.name.to_lowercase(),

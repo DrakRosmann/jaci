@@ -393,6 +393,11 @@ pub fn snapshot_value(a: &App, since: u64) -> Value {
             "patch": l.patch_installed,
             "vessels": l.vessels.len(),
             "live": l.vessels.iter().filter(|v| v.age() < 5.0).count(),
+            "files": l.kos,
+            "krpc": l.krpc.as_ref().map(|b| {
+                let st = b.status();
+                json!({"addr": b.addr, "connected": st.connected, "message": st.message, "vessel": st.vessel})
+            }),
         })
     });
     json!({

@@ -31,7 +31,7 @@ pub const SCENARIOS: &[ScenarioInfo] = &[
     ScenarioInfo { id: "lua", name: "Sonda lunar", description: "Injeção translunar da órbita de estacionamento e inserção em órbita da Lua" },
     ScenarioInfo { id: "pouso-lua", name: "Pouso na Lua", description: "Módulo lunar em 15 × 110 km, chegando ao perilúnio: comande a descida propulsada (PDI) e pouse nas pernas" },
     ScenarioInfo { id: "pouso-marte", name: "Pouso em Marte", description: "Sonda entrando na atmosfera de Marte: escudo, paraquedas supersônico e descida propulsada automática até o solo" },
-    ScenarioInfo { id: "ksp", name: "Kerbal Space Program (kOS)", description: "Sem veículos simulados: o Jaci acompanha e comanda as naves do KSP pelo kOS" },
+    ScenarioInfo { id: "ksp", name: "Kerbal Space Program", description: "Sem veículos simulados: o Jaci acompanha e comanda as naves do KSP pelo kOS ou pelo kRPC" },
 ];
 
 /// Coloca um veículo numa órbita.

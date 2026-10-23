@@ -2,6 +2,7 @@
 //! com a interface, serve os arquivos dela e, se pedido, troca pacotes CCSDS
 //! por UDP com computadores de bordo de verdade.
 
+mod krpc;
 mod ksp;
 mod recording;
 mod room;
@@ -57,6 +58,10 @@ struct Args {
     /// Liga ao Kerbal Space Program pelo kOS. Sem a pasta, procura a do Steam.
     #[arg(long, num_args = 0..=1, value_name = "PASTA_DO_KSP", env = "JACI_KSP")]
     ksp: Option<Option<PathBuf>>,
+    /// Liga ao Kerbal Space Program pelo kRPC (alternativa ao kOS, pela rede).
+    /// Sem o endereço, 127.0.0.1:50000.
+    #[arg(long, num_args = 0..=1, value_name = "ENDEREÇO", default_missing_value = "127.0.0.1:50000", env = "JACI_KRPC")]
+    krpc: Option<String>,
     /// Lista os cenários e sai.
     #[arg(long)]
     list: bool,
@@ -408,15 +413,20 @@ async fn main() -> anyhow::Result<()> {
         Some(s) => parse_utc(s).context("data de início inválida (use AAAA-MM-DD HH:MM:SS)")?,
         None => now_j2000(),
     };
-    let scenario = args.scenario.clone().unwrap_or_else(|| if args.ksp.is_some() { "ksp" } else { "sondagem" }.into());
+    let scenario = args.scenario.clone().unwrap_or_else(|| if args.ksp.is_some() || args.krpc.is_some() { "ksp" } else { "sondagem" }.into());
     let world = match scenarios::build(&scenario, t0, args.seed) {
         Some(w) => w,
         None => library.scenario(&scenario, t0, args.seed).map_err(|e| anyhow::anyhow!(e))?,
     };
-    let ksp_link = match &args.ksp {
+    let mut ksp_link = match &args.ksp {
         Some(dir) => Some(connect_ksp(dir.clone())?),
         None => None,
     };
+    if let Some(addr) = &args.krpc {
+        let link = ksp_link.get_or_insert_with(ksp::KspLink::without_kos);
+        link.connect_krpc(addr);
+        tracing::info!("kRPC: conectando a {addr}");
+    }
     tracing::info!("cenário {} em {}", world.mission, format_utc(world.t));
     let mut world = world;
     let (packet_defs, xtce_errors) = load_xtce(&mdir.join("ccsds"));
@@ -1215,7 +1225,10 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
         "ksp_connect" => {
             let dir = msg.get("value").and_then(|x| x.as_str()).filter(|s| !s.trim().is_empty()).map(|s| PathBuf::from(s.trim()));
             match connect_ksp(dir) {
-                Ok(link) => {
+                Ok(mut link) => {
+                    if let Some(old) = a.ksp.take() {
+                        link.adopt(old);
+                    }
                     let m = format!("KSP ligado: scripts em {}", link.dir.display());
                     a.world.event(None, jaci_sim::vehicle::Level::Good, &m);
                     a.ksp = Some(link);
@@ -1224,6 +1237,21 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
                 }
                 Err(e) => json!({"type": "sim_result", "req": req, "ok": false, "error": format!("{e:#}")}),
             }
+        }
+        "krpc_connect" => {
+            let addr = msg.get("value").and_then(|x| x.as_str()).map(str::trim).filter(|s| !s.is_empty()).unwrap_or("127.0.0.1:50000").to_string();
+            let link = a.ksp.get_or_insert_with(ksp::KspLink::without_kos);
+            link.connect_krpc(&addr);
+            a.dict_sig.clear();
+            let m = format!("kRPC: conectando a {addr}");
+            a.world.event(None, jaci_sim::vehicle::Level::Info, &m);
+            json!({"type": "sim_result", "req": req, "ok": true, "message": m})
+        }
+        "krpc_disconnect" => {
+            if let Some(l) = a.ksp.as_mut() {
+                l.krpc = None;
+            }
+            ok("kRPC desligado")
         }
         "ksp_patch" => match a.ksp.as_mut().map(|l| l.install_patch()) {
             Some(Ok(())) => ok("patch instalado: reinicie o KSP para pôr o kOS nas peças de comando"),

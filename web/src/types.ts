@@ -291,6 +291,8 @@ export interface Vehicle {
 /** Nave do Kerbal Space Program, vista pelo kOS (server/src/ksp.rs). */
 export interface KspVessel {
   uid: string
+  /** Ponte: "kOS" (arquivos) ou "kRPC" (rede). */
+  via?: 'kOS' | 'kRPC'
   situation: string
   mode: 'manual' | 'ascent' | 'coast' | 'node' | string
   steer: string
@@ -318,6 +320,9 @@ export interface KspStatus {
   patch: boolean
   vessels: number
   live: number
+  /** A ponte do kOS (por arquivos) está ligada. */
+  files?: boolean
+  krpc?: { addr: string; connected: boolean; message: string; vessel: string } | null
 }
 
 export interface SeqItem {

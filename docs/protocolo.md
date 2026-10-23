@@ -131,6 +131,23 @@ iniciar o script marca como vistos os que já estavam lá.
 | `launch` | apoastro alvo (km), rumo (°) |
 | `target` | nome (espaços como `_`) |
 
+## Ponte com o kRPC (rede)
+
+Com `--krpc [endereço]` (ou `krpc_connect` pela interface), uma thread do servidor conecta ao
+servidor RPC do kRPC (TCP, padrão `127.0.0.1:50000`): pedido de conexão RPC (`ConnectionRequest`,
+tipo 0, nome `Jaci`), depois requisições `Request` com várias `ProcedureCall` cada, todas as
+mensagens com o tamanho em varint na frente. Valores no formato do kRPC: `double`/`float` em
+little-endian, inteiros em zigzag, booleanos e objetos (ids) em varint, texto com o tamanho na
+frente, listas e tuplas como mensagem com os itens no campo 1.
+
+A cada 0,1 s ela lê a nave ativa (`SpaceCenter.get_ActiveVessel`, órbita, controle, voo nos
+referenciais da superfície e do corpo, recursos, nós e alvo) e, a cada 0,2 s, produz uma linha `T`
+igual à do kOS. As linhas `H`, `B`, `R` e `E` também seguem a tabela acima; o identificador da nave
+é `krpc-<id do objeto>`. Os comandos são os mesmos da tabela do kOS: a thread os traduz em chamadas
+(`Control_ActivateNextStage`, `Control_set_Throttle`, `Control_set_SASMode`, `Control_AddNode`,
+`AutoPilot_TargetPitchAndHeading`…) e responde com `R`. Subida, circularização e execução de manobra
+rodam na thread, com o piloto automático do kRPC. Quando a conexão cai, ela tenta de novo a cada 2 s.
+
 ## Enlace CCSDS (UDP)
 
 Pacotes do Space Packet Protocol (CCSDS 133.0-B): cabeçalho primário de 6 bytes, big-endian.
