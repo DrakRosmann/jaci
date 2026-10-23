@@ -100,6 +100,12 @@ export function TopBar({ onHelp, onRoom }: { onHelp: () => void; onRoom: () => v
       <button className="small" onClick={() => store.setUi({ lang: lang === 'pt' ? 'en' : 'pt' })} title="Português / English (l)" aria-label={lang === 'pt' ? 'English' : 'Português'}>
         {lang === 'pt' ? 'EN' : 'PT'}
       </button>
+      <button className="small" onClick={() => window.open(location.href, '_blank', 'noopener')} title={t('Abrir este console numa janela nova (para outro monitor)')} aria-label={t('Abrir numa janela nova')}>
+        ⧉
+      </button>
+      <button className="small" onClick={() => store.setUi({ view: 'wall' })} title={`${t('Telão: tela cheia para a parede da sala')} (w)`} aria-label={t('Telão')}>
+        ⛶
+      </button>
       <button className="small" onClick={onHelp} title={t('Atalhos de teclado') + ' (?)'} aria-label={t('Atalhos de teclado')}>
         ?
       </button>

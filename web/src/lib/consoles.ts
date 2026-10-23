@@ -17,10 +17,11 @@ export const CONSOLES: { id: View; code: string; name: string }[] = [
   { id: 'instructor', code: 'SIM', name: 'Instrutor' },
   { id: 'ksp', code: 'KSP', name: 'Kerbal Space Program' },
   { id: 'timeline', code: 'FAO', name: 'Linha do tempo' },
+  { id: 'custom', code: 'MEU', name: 'Meu console' },
 ]
 
 /** Teclas dos consoles, na ordem do menu. */
-export const CONSOLE_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\\', 't']
+export const CONSOLE_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\\', 't', 'c']
 
 /** Acelerações do tempo da barra de cima (e das teclas [ e ]). */
 export const WARPS = [1, 10, 100, 1_000, 10_000, 100_000]

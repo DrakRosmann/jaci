@@ -52,7 +52,7 @@ Para mexer na interface com recarga automática: `cargo run --release --bin jaci
 
 O endereço aceita atalhos: `/#launch` abre o console de lançamento, `/#orbit&en` o de órbita em
 inglês; voltar e avançar do navegador trocam de console. No teclado, `1`…`9`, `0`, `-`, `=` e `\`
-abrem os consoles na ordem do menu, espaço pausa, `[` e `]` mudam a aceleração do tempo, `e` mostra
+(e `t`, `c`) abrem os consoles na ordem do menu, `w` o telão, espaço pausa, `[` e `]` mudam a aceleração do tempo, `e` mostra
 os eventos, `l` troca a língua e `?` lista os atalhos (nenhum manda comando a veículo).
 
 ## Cenários
@@ -141,6 +141,14 @@ sequência automática de ativação de satélite.
   vazamento na cabine, remoção de CO₂, paraquedas, célula a combustível, barco na área, falha de solo
   e tempestade.
 * **Kerbal Space Program (KSP):** a ligação com o jogo e o controle das naves pelo kOS (veja abaixo).
+* **Meu console (MEU):** blocos dos outros consoles — mapa, órbita 3D, gráfico, mostradores,
+  alarmes, eventos, relógios, frota, contagem, linha do tempo e loops — numa grade que se arrasta
+  pelo título e se redimensiona pelo canto ("Editar"); guardado por posição da sala, com modelos
+  prontos para cada uma e exportar/importar.
+* **Telão (`/#telao`, tecla `w`, botão ⛶):** tela cheia para a parede da sala, em letra grande:
+  relógios e contagem, mapa da frota, alarmes ativos (a borda fica vermelha com alarme vermelho),
+  estado dos veículos e os últimos eventos. O botão ⧉ abre o console atual numa janela nova, para
+  outro monitor.
 * **Linha do tempo (FAO):** o que vem pela frente para o veículo, em faixas — eventos recentes,
   contagem e janela, queimas, comandos agendados, eclipses, periastros e apoastros, passagens em
   cada estação e (para o instrutor) as falhas planejadas —, com zoom de 1 h a 3 dias e a lista dos
@@ -177,7 +185,9 @@ dia). A lista fica em `satelites.tle`, ao lado dos estados salvos, e continua ao
 
 Com `jaci --room` (ou "Sala com posições" no console **Instrutor**), cada tela entra numa posição —
 FLIGHT, LCC, BOOSTER, FIDO, GNC, EECOM, INCO, PAYLOAD, RSO, METEO, CAPCOM, SURGEON, SIM
-(instrutor) ou OBS (observador) — pelo crachá na barra de cima, e só comanda o que é dela: o FLIGHT
+(instrutor) ou OBS (observador) — pelo crachá na barra de cima (a tela vai para o console da
+posição: EECOM para Subsistemas, FIDO para Órbita, SIM para o Instrutor, OBS para o telão…), e só
+comanda o que é dela: o FLIGHT
 comanda tudo; cada posição, os grupos de comando da sua área (o RSO a terminação de voo, a EECOM
 energia, térmico e suporte de vida, o FIDO manobras e o planejador…); o instrutor só mexe no
 simulador; o observador só acompanha. O servidor confere cada mensagem e a interface apaga o que

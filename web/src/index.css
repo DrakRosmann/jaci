@@ -406,6 +406,231 @@ a.button:hover {
   }
 }
 
+.custom-bar {
+  margin-bottom: 8px;
+}
+label.button {
+  display: inline-block;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.grid-board {
+  position: relative;
+}
+.board-item {
+  position: absolute;
+  transition:
+    left 0.12s,
+    top 0.12s,
+    width 0.12s,
+    height 0.12s;
+  overflow: hidden;
+}
+.board-item.dragging {
+  transition: none;
+  z-index: 3;
+  box-shadow: 0 8px 30px #000b;
+  border-color: var(--accent-2);
+}
+.grid-board.editing .board-item > h3 {
+  user-select: none;
+  touch-action: none;
+}
+.grid-board.editing {
+  background-image: linear-gradient(90deg, #ffffff06 1px, transparent 1px);
+  background-size: calc((100% + 8px) / 12) 100%;
+}
+.board-body {
+  overflow: auto;
+}
+.board-item .resize {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  touch-action: none;
+  background: linear-gradient(135deg, transparent 50%, var(--accent-2) 50%);
+  border-radius: 2px;
+}
+.points-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+}
+.points-editor .list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.alarm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.alarm-row {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 6px;
+  border-left: 3px solid var(--warn);
+  background: #2a2210;
+  border-radius: 4px;
+}
+.alarm-row.red {
+  border-left-color: var(--bad);
+  background: #2a1018;
+}
+.alarm-row.acked {
+  opacity: 0.6;
+}
+.mini-events .ev {
+  grid-template-columns: 70px 110px 1fr;
+  font: 12px var(--mono);
+}
+.clocks-widget {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+}
+.clocks-widget div {
+  display: flex;
+  flex-direction: column;
+}
+.clocks-widget span {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.clocks-widget b {
+  font-size: 22px;
+}
+.clocks-widget .count b {
+  color: var(--accent);
+}
+.clocks-widget .hold b {
+  color: var(--warn);
+}
+.countdown-widget {
+  text-align: center;
+}
+.loops-widget {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+}
+.loops-widget .msgs {
+  flex: 1;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
+/* Telão */
+.wall {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #050a14;
+  padding: 12px 18px;
+  gap: 12px;
+  font-size: 18px;
+}
+.wall.red {
+  box-shadow: inset 0 0 0 6px var(--bad);
+}
+.wall > header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.wall > header > b {
+  font-size: 24px;
+  letter-spacing: 0.1em;
+}
+.wall .mission {
+  font-size: 22px;
+  color: var(--muted);
+}
+.wall .clocks-widget b {
+  font-size: 34px;
+}
+.wall .clocks-widget span {
+  font-size: 13px;
+}
+.wall-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  grid-template-rows: 1fr auto;
+  gap: 12px;
+}
+.wall-map {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wall-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+.wall-block h2 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.wall .big-clock {
+  font-size: 72px;
+}
+.wall .countdown-widget .pill {
+  font-size: 22px;
+  padding: 2px 16px;
+}
+.alarm-list.big .alarm-row {
+  font-size: 20px;
+  padding: 8px 10px;
+}
+.wall-ok {
+  font-size: 20px;
+  color: var(--good);
+}
+table.big td {
+  font-size: 19px;
+  padding: 6px 8px;
+}
+.wall-events {
+  grid-column: span 2;
+}
+.wall-events .ev {
+  font-size: 16px;
+  grid-template-columns: 110px 200px 1fr;
+}
+@media (max-width: 900px) {
+  .wall-grid {
+    grid-template-columns: 1fr;
+  }
+  .wall-events {
+    grid-column: auto;
+  }
+}
+
 .sound {
   position: relative;
   display: flex;

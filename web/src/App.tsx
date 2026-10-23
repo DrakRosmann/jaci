@@ -36,6 +36,8 @@ const VIEWS: Record<View, Lazy> = {
   instructor: view(() => import('./views/Instructor'), (m) => m.Instructor),
   ksp: view(() => import('./views/Ksp'), (m) => m.KspView),
   timeline: view(() => import('./views/Timeline'), (m) => m.Timeline),
+  custom: view(() => import('./views/Custom'), (m) => m.Custom),
+  wall: view(() => import('./views/Wall'), (m) => m.Wall),
 }
 
 /** Sem instantâneo há mais que isso, os dados são dados como congelados. */
@@ -70,6 +72,21 @@ export default function App() {
     document.documentElement.lang = lang === 'en' ? 'en' : 'pt-BR'
   }, [lang])
   const Current = VIEWS[view]
+  // Telão: tela cheia, sem menus nem barras.
+  if (view === 'wall') {
+    return (
+      <>
+        {hasSnap ? (
+          <Suspense fallback={null}>
+            <Current />
+          </Suspense>
+        ) : (
+          <Waiting />
+        )}
+        <Toasts />
+      </>
+    )
+  }
   return (
     <div className="app">
       <TopBar onHelp={() => setHelp(true)} onRoom={() => setJoin(true)} />
@@ -244,8 +261,11 @@ function useKeys(setHelp: (b: boolean) => void) {
         store.setUi({ lang: store.ui.lang === 'pt' ? 'en' : 'pt' })
       } else if (e.key === '?') {
         setHelp(true)
+      } else if (e.key === 'w') {
+        store.setUi({ view: store.ui.view === 'wall' ? 'overview' : 'wall' })
       } else if (e.key === 'Escape') {
         setHelp(false)
+        if (store.ui.view === 'wall') store.setUi({ view: 'overview' })
       } else {
         return
       }

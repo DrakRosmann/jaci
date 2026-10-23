@@ -5,6 +5,7 @@
 import { useRef, useSyncExternalStore } from 'react'
 import type { EventMsg, Hello, Snapshot, TmDef, Vehicle } from '../types'
 import { History } from './history'
+import { POSITION_VIEW } from './layout'
 
 type Listener = () => void
 
@@ -23,6 +24,8 @@ export type View =
   | 'instructor'
   | 'ksp'
   | 'timeline'
+  | 'custom'
+  | 'wall'
 
 export interface UiState {
   view: View
@@ -32,13 +35,14 @@ export interface UiState {
   navCollapsed: boolean
 }
 
-export const VIEWS: View[] = ['overview', 'launch', 'trajectory', 'orbit', 'rendezvous', 'systems', 'commands', 'telemetry', 'stations', 'interplanetary', 'procedures', 'instructor', 'ksp', 'timeline']
+export const VIEWS: View[] = ['overview', 'launch', 'trajectory', 'orbit', 'rendezvous', 'systems', 'commands', 'telemetry', 'stations', 'interplanetary', 'procedures', 'instructor', 'ksp', 'timeline', 'custom', 'wall']
 
 /** Console e língua pedidos no endereço: /#launch abre o lançamento; /#orbit&en, a órbita em inglês. */
 export function parseHash(hash: string): Partial<Pick<UiState, 'view' | 'lang'>> {
   const out: Partial<Pick<UiState, 'view' | 'lang'>> = {}
   for (const part of hash.replace(/^#/, '').split('&')) {
     if ((VIEWS as string[]).includes(part)) out.view = part as View
+    if (part === 'telao') out.view = 'wall'
     if (part === 'en' || part === 'pt') out.lang = part
   }
   return out
@@ -90,7 +94,7 @@ class Store {
     this.ui = { ...this.ui, ...patch }
     // O console vai para o histórico do navegador (voltar e avançar trocam de console).
     if (typeof location !== 'undefined' && (this.ui.view !== before.view || this.ui.lang !== before.lang)) {
-      const hash = `#${this.ui.view}${this.ui.lang === 'en' ? '&en' : ''}`
+      const hash = `#${this.ui.view === 'wall' ? 'telao' : this.ui.view}${this.ui.lang === 'en' ? '&en' : ''}`
       if (location.hash !== hash) {
         if (this.ui.view !== before.view) history.pushState(null, '', hash)
         else history.replaceState(null, '', hash)
@@ -207,7 +211,10 @@ class Store {
   async join(me: { name: string; position: string } | null) {
     const r = await this.request<{ ok: boolean; error?: string }>(me ? { type: 'join', ...me } : { type: 'leave' })
     if (r.ok) {
+      // Posição nova: abre no console dela.
+      const changed = me && me.position !== this.me?.position
       this.me = me
+      if (changed && POSITION_VIEW[me.position]) this.setUi({ view: POSITION_VIEW[me.position] })
       try {
         if (me) localStorage.setItem('jaci.me', JSON.stringify(me))
         else localStorage.removeItem('jaci.me')
