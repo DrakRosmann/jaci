@@ -4,9 +4,10 @@
 // órbita). Salva os arquivos de veículo e de cenário e lança.
 
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import { Chart } from '../components/Chart'
 import { Panel, Tile, toast } from '../components/ui'
 import { t, tx } from '../lib/i18n'
-import { num } from '../lib/format'
+import { duration, num } from '../lib/format'
 import {
   DEFAULT_DESIGN,
   DEFAULT_MISSION,
@@ -15,6 +16,8 @@ import {
   PROPELLANTS,
   computeStats,
   engine,
+  engineSheet,
+  launcherCost,
   fileId,
   parseHangar,
   payload,
@@ -78,6 +81,22 @@ const PRESETS: [string, Design][] = [
   ],
 ]
 
+/** O que o teste de voo do servidor devolve (sim/src/flight_test.rs). */
+interface FlightReport {
+  ok: boolean
+  result: string
+  pe_km: number
+  ap_km: number
+  inc_deg: number
+  max_q_kpa: number
+  max_q_t: number
+  max_g: number
+  time_to_orbit: number | null
+  dv_left: number
+  events: [number, string, string][]
+  track: { t: number; alt_km: number; downrange_km: number; speed: number; q_kpa: number; g: number }[]
+}
+
 /** Δv aproximado da plataforma até cada destino (m/s), para comparar. */
 const DESTINATIONS: [string, number][] = [
   ['Órbita baixa', 9_400],
@@ -97,8 +116,46 @@ function load(): { design: Design; mission: Mission } {
 }
 
 export function Hangar() {
-  const [state, setState] = useState(load)
+  // O projeto e o histórico para desfazer e refazer (as mudanças de um arrasto contam como uma).
+  type S = ReturnType<typeof load>
+  const [h, setH] = useState(() => ({ cur: load(), past: [] as S[], future: [] as S[], at: 0 }))
+  const state = h.cur
   const { design: d, mission: m } = state
+  const setState = (next: S | ((s: S) => S)) =>
+    setH((p) => {
+      const now = Date.now()
+      const cur = typeof next === 'function' ? next(p.cur) : next
+      const merge = now - p.at < 600
+      return { cur, past: merge ? p.past : [...p.past.slice(-80), p.cur], future: merge ? p.future : [], at: now }
+    })
+  const undo = () => setH((p) => (p.past.length ? { cur: p.past[p.past.length - 1], past: p.past.slice(0, -1), future: [...p.future, p.cur], at: 0 } : p))
+  const redo = () => setH((p) => (p.future.length ? { cur: p.future[p.future.length - 1], past: [...p.past, p.cur], future: p.future.slice(0, -1), at: 0 } : p))
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z' || (el && ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))) return
+      e.preventDefault()
+      if (e.shiftKey) redo()
+      else undo()
+    }
+    window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  })
+  const [hover, setHover] = useState<number | null>(null)
+  const [test, setTest] = useState<FlightReport | null>(null)
+  const [testing, setTesting] = useState(false)
+  const runTest = async () => {
+    setTesting(true)
+    setTest(null)
+    try {
+      const r = await store.request<{ ok: boolean; data?: FlightReport; error?: string }>({ type: 'hangar_test', text: vehicleToml(d, m), site: m.site }, 180000)
+      if (!r.ok || !r.data) throw new Error(tx(r.error))
+      setTest(r.data)
+    } catch (e) {
+      toast(String(e instanceof Error ? e.message : e), 'bad')
+    }
+    setTesting(false)
+  }
   const sites = useStore((s) => s.hello?.sites ?? [])
   const [files, setFiles] = useState<{ sub: string; id: string; name: string | null }[]>([])
   const [busy, setBusy] = useState(false)
@@ -122,6 +179,12 @@ export function Hangar() {
     refresh()
   }, [])
   const setStage = (i: number, patch: Partial<StageDesign>) => setD({ stages: d.stages.map((s, k) => (k === i ? { ...s, ...patch } : s)) })
+  const duplicate = (i: number) => {
+    if (d.stages[i].boosters) return
+    const st = [...d.stages]
+    st.splice(i + 1, 0, { ...d.stages[i] })
+    setD({ stages: st })
+  }
   const move = (i: number, dir: number) => {
     const j = i + dir
     if (j < 0 || j >= d.stages.length) return
@@ -176,6 +239,12 @@ export function Hangar() {
         title={t('Hangar: montagem do foguete')}
         right={
           <div className="row">
+            <button className="small" onClick={undo} disabled={!h.past.length} title={`${t('Desfazer')} (Ctrl+Z)`}>
+              ↶
+            </button>
+            <button className="small" onClick={redo} disabled={!h.future.length} title={`${t('Refazer')} (Ctrl+Shift+Z)`}>
+              ↷
+            </button>
             <select value="" onChange={(e) => e.target.value && setState({ design: PRESETS[Number(e.target.value)][1], mission: m })} aria-label={t('Modelos')}>
               <option value="">{t('Modelos…')}</option>
               {PRESETS.map(([n], i) => (
@@ -202,7 +271,7 @@ export function Hangar() {
               <input value={d.name} onChange={(e) => setD({ name: e.target.value })} />
             </label>
             {/* A carga no alto, depois os estágios de cima para baixo (como o foguete em pé). */}
-            <div className="part payload">
+            <div className="part payload" onMouseEnter={() => setHover(d.stages.length)} onMouseLeave={() => setHover(null)}>
               <div className="part-head">
                 <b>{t('Carga')}</b>
                 <select value={d.payload} onChange={(e) => setD({ payload: e.target.value as Design['payload'], payloadMass: payload(e.target.value).mass, crew: payload(e.target.value).crew ? 3 : 0 })}>
@@ -237,7 +306,7 @@ export function Hangar() {
               .map((s, i) => ({ s, i }))
               .reverse()
               .map(({ s, i }) => (
-                <StageCard key={i} s={s} i={i} n={d.stages.length} onChange={(p) => setStage(i, p)} onMove={(dir) => move(i, dir)} onRemove={() => setD({ stages: d.stages.filter((_, k) => k !== i) })} label={s.boosters ? t('Boosters') : `${i + 1 - (d.stages[0]?.boosters ? 1 : 0)}º ${t('estágio')}`} />
+                <StageCard key={i} s={s} i={i} n={d.stages.length} onHover={(on) => setHover(on ? i : null)} onDuplicate={() => duplicate(i)} onChange={(p) => setStage(i, p)} onMove={(dir) => move(i, dir)} onRemove={() => setD({ stages: d.stages.filter((_, k) => k !== i) })} label={s.boosters ? t('Boosters') : `${i + 1 - (d.stages[0]?.boosters ? 1 : 0)}º ${t('estágio')}`} />
               ))}
             <div className="row">
               <button className="small" onClick={addStage}>
@@ -250,7 +319,7 @@ export function Hangar() {
           </div>
           <div className="hangar-view">
             <Suspense fallback={<div className="loading muted">{t('Carregando a vista 3D…')}</div>}>
-              <Vehicle3D v={preview} height={560} />
+              <Vehicle3D v={preview} height={560} highlight={hover} />
             </Suspense>
           </div>
           <div className="hangar-stats">
@@ -259,6 +328,7 @@ export function Hangar() {
               <Tile label={t('TWR na decolagem')} value={num(stats.liftoffTwr, 2)} state={stats.liftoffTwr < 1.15 ? 'red' : 'nominal'} />
               <Tile label={t('Massa na decolagem')} value={num(stats.liftoff / 1000, 1)} unit="t" />
               <Tile label={t('Carga e coifa')} value={num(stats.payload / 1000, 2)} unit="t" />
+              <Tile label={t('Custo do lançador')} value={`≈ ${num(launcherCost(d), 0)}`} unit={t('mi US$')} title={t('Motores, estrutura e propelente; ordem de grandeza')} />
             </div>
             <table className="dv-table">
               <thead>
@@ -352,6 +422,11 @@ export function Hangar() {
             <span className="small muted mono">
               veiculos/{id}.toml · cenarios/{id}-missao.toml
             </span>
+            {m.mode === 'pad' && (
+              <button onClick={runTest} disabled={testing || !d.stages.length} title={t('Voa o foguete no simulador, num mundo à parte, sem salvar nada')}>
+                {testing ? t('Voando…') : `🧪 ${t('Testar voo')}`}
+              </button>
+            )}
             <button onClick={() => save(false)} disabled={busy || !allowed || !d.stages.length}>
               {t('Salvar')}
             </button>
@@ -361,11 +436,75 @@ export function Hangar() {
           </div>
         </div>
       </Panel>
+      {test && <TestReport r={test} onClose={() => setTest(null)} />}
     </div>
   )
 }
 
-function StageCard({ s, i, n, label, onChange, onMove, onRemove }: { s: StageDesign; i: number; n: number; label: string; onChange: (p: Partial<StageDesign>) => void; onMove: (dir: number) => void; onRemove: () => void }) {
+/** Resultado do teste de voo: o veredito, os números, a trajetória e os eventos. */
+function TestReport({ r, onClose }: { r: FlightReport; onClose: () => void }) {
+  const tr = r.track
+  const series = (label: string, color: string, f: (p: FlightReport['track'][number]) => number) => [{ label, color, t: tr.map((p) => p.t), v: tr.map(f) }]
+  return (
+    <Panel
+      title={t('Teste de voo')}
+      right={
+        <button className="small" onClick={onClose}>
+          ×
+        </button>
+      }
+    >
+      <div className={`banner ${r.ok ? 'good' : 'alarm'}`}>{tx(r.result)}</div>
+      <div className="tiles" style={{ marginTop: 8 }}>
+        <Tile label={t('Órbita')} value={r.pe_km > -6000 ? `${num(r.pe_km, 0)} × ${num(r.ap_km, 0)}` : '—'} unit="km" state={r.ok ? 'nominal' : 'red'} />
+        <Tile label={t('Inclinação')} value={num(r.inc_deg, 1)} unit="°" />
+        <Tile label={t('Tempo até a órbita')} value={r.time_to_orbit != null ? duration(r.time_to_orbit) : '—'} />
+        <Tile label={t('Pressão dinâmica máxima')} value={num(r.max_q_kpa, 1)} unit="kPa" title={`T+${num(r.max_q_t, 0)} s`} state={r.max_q_kpa > 45 ? 'yellow' : 'nominal'} />
+        <Tile label={t('Carga g máxima')} value={num(r.max_g, 1)} unit="g" state={r.max_g > 6 ? 'yellow' : 'nominal'} />
+        <Tile label={t('Δv que sobrou')} value={num(r.dv_left, 0)} unit="m/s" />
+      </div>
+      {tr.length > 2 && (
+        <div className="grid cols-3" style={{ marginTop: 8 }}>
+          <Chart series={series(t('Altitude (km)'), '#4cc3ff', (p) => p.alt_km)} height={170} t0={0} />
+          <Chart series={series(t('Velocidade (m/s)'), '#3ddc84', (p) => p.speed)} height={170} t0={0} />
+          <Chart series={[...series('q (kPa)', '#ffc23d', (p) => p.q_kpa), ...series(t('Carga (g)'), '#ff8a3d', (p) => p.g)]} height={170} t0={0} />
+        </div>
+      )}
+      <div className="test-events">
+        {r.events
+          .filter(([tt, lvl]) => lvl !== 'Chat' && tt >= -10)
+          .map(([tt, lvl, text], i) => (
+            <div key={i} className={`tev ${String(lvl).toLowerCase()}`}>
+              <span className="mono muted">{tt < 0 ? `T${num(tt, 0)}` : `T+${num(tt, 0)}`} s</span>
+              <span>{tx(text)}</span>
+            </div>
+          ))}
+      </div>
+    </Panel>
+  )
+}
+
+function StageCard({
+  s,
+  i,
+  n,
+  label,
+  onChange,
+  onMove,
+  onRemove,
+  onHover,
+  onDuplicate,
+}: {
+  s: StageDesign
+  i: number
+  n: number
+  label: string
+  onChange: (p: Partial<StageDesign>) => void
+  onMove: (dir: number) => void
+  onRemove: () => void
+  onHover: (on: boolean) => void
+  onDuplicate: () => void
+}) {
   const ms = stageMasses(s)
   const engines = ENGINES.filter((e) => e.propellant === s.propellant)
   const setProp = (p: PropellantId) => {
@@ -373,7 +512,7 @@ function StageCard({ s, i, n, label, onChange, onMove, onRemove }: { s: StageDes
     onChange({ propellant: p, engine: first.id })
   }
   return (
-    <div className={`part ${s.boosters ? 'boosters' : ''}`}>
+    <div className={`part ${s.boosters ? 'boosters' : ''}`} onMouseEnter={() => onHover(true)} onMouseLeave={() => onHover(false)}>
       <div className="part-head">
         <b>{label}</b>
         <span className="row">
@@ -383,6 +522,11 @@ function StageCard({ s, i, n, label, onChange, onMove, onRemove }: { s: StageDes
           <button className="small" onClick={() => onMove(-1)} disabled={i === 0 || s.boosters} title={t('Descer')}>
             ↓
           </button>
+          {!s.boosters && (
+            <button className="small" onClick={onDuplicate} title={t('Duplicar')}>
+              ⧉
+            </button>
+          )}
           <button className="small" onClick={onRemove} title={t('Tirar')}>
             ×
           </button>
@@ -422,6 +566,7 @@ function StageCard({ s, i, n, label, onChange, onMove, onRemove }: { s: StageDes
           <input type="range" min={1} max={70} step={0.1} value={s.length} onChange={(e) => onChange({ length: Number(e.target.value) })} />
         </label>
       </div>
+      <div className="small engine-sheet">{engineSheet(s.engine)}</div>
       <div className="small muted">
         {num(ms.prop / 1000, 1)} t {t('de propelente')} · {num(ms.dry / 1000, 2)} t {t('seco')} · {num(ms.thrust, 0)} kN ({engine(s.engine).vacuum ? t('vácuo') : t('nível do mar')})
       </div>

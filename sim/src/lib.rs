@@ -17,6 +17,7 @@ pub mod commands;
 pub mod ground;
 pub mod launch;
 pub mod library;
+pub mod flight_test;
 pub mod planner;
 pub mod scenarios;
 pub mod telemetry;

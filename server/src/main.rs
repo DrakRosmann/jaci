@@ -1092,6 +1092,19 @@ fn handle(ctx: &Ctx, conn: u64, msg: &Value) -> Option<Value> {
             let pc = planner::porkchop(from, to, start, g("span_days", 400.0), g("tof_min", 100.0), g("tof_max", 400.0), g("n", 40.0) as usize);
             return Some(json!({"type": "porkchop", "req": req, "data": pc}));
         }
+        "hangar_test" => {
+            // Teste de voo do hangar: voa o veículo num mundo à parte (não mexe na sala).
+            let text = msg.get("text").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let site = msg.get("site").and_then(|x| x.as_str()).unwrap_or("Alcântara").to_string();
+            let lib = a.library.clone();
+            let t = a.world.t;
+            drop(a);
+            let r = tokio::task::block_in_place(|| jaci_sim::flight_test::test_flight(&lib, &text, &site, t));
+            return Some(match r {
+                Ok(rep) => json!({"type": "hangar_test", "req": req, "ok": true, "data": rep}),
+                Err(e) => json!({"type": "hangar_test", "req": req, "ok": false, "error": e}),
+            });
+        }
         "flyby" => {
             let body = |k: &str, d: Body| msg.get(k).and_then(|x| x.as_str()).and_then(Body::from_id).unwrap_or(d);
             let (from, via, to) = (body("from", Body::Earth), body("via", Body::Venus), body("to", Body::Mars));

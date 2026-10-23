@@ -8,6 +8,11 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { cross, localFrame, unit, type Q, type V3 } from '../lib/attitude'
 import { t } from '../lib/i18n'
 import { useStore } from '../lib/store'
@@ -119,6 +124,33 @@ function launchTower(height: number): THREE.Group {
   return g
 }
 
+/** Preferências da vista: câmera, brilho e sombras (no navegador). */
+type CameraMode = 'free' | 'chase' | 'ground'
+interface View3D {
+  cam: CameraMode
+  bloom: boolean
+  shadows: boolean
+}
+function loadView(): View3D {
+  try {
+    return { cam: 'free', bloom: true, shadows: true, ...JSON.parse(localStorage.getItem('jaci.3d') ?? '{}') }
+  } catch {
+    return { cam: 'free', bloom: true, shadows: true }
+  }
+}
+
+/** Matriz da atitude (quatérnio corpo → inercial) levada para a cena. */
+function attitudeMatrix(q: Q, toScene: (d: V3) => V3): THREE.Matrix4 {
+  const rot = (b: V3): V3 => {
+    const [w, x, y, z] = q
+    const u: V3 = [x, y, z]
+    const tt = cross(u, b).map((c) => c * 2) as V3
+    const c2 = cross(u, tt)
+    return [b[0] + tt[0] * w + c2[0], b[1] + tt[1] * w + c2[1], b[2] + tt[2] * w + c2[2]]
+  }
+  return new THREE.Matrix4().makeBasis(new THREE.Vector3(...unit(toScene(rot([1, 0, 0])))), new THREE.Vector3(...unit(toScene(rot([0, 1, 0])))), new THREE.Vector3(...unit(toScene(rot([0, 0, 1])))))
+}
+
 interface Scene3D {
   renderer: THREE.WebGLRenderer
   scene: THREE.Scene
@@ -140,18 +172,36 @@ interface Scene3D {
   dust: ReturnType<typeof particles>
   key: string
   plumes: Plume[]
+  composer: EffectComposer
+  view: View3D
+  /** Outras naves por perto (estágios largados, coifa, o alvo), por id. */
+  others: Map<number, { group: THREE.Group; key: string; plumes: Plume[]; label: HTMLDivElement }>
+  /** Onde ficam os rótulos das outras naves (por cima do canvas). */
+  labels: HTMLDivElement
+  highlight: THREE.Box3Helper
   size: number
   /** Raio da nave em volta do eixo (para a casca do choque). */
   radius: number
   /** Nave acoplada selecionada: a câmera mira nela (uma vez, depois de montar). */
   focus: THREE.Group | null
   // Estado dos efeitos, atualizado a cada instantâneo e animado a cada quadro.
-  fx: { heat: number; vel: THREE.Vector3; dust: number; dustColor: number; groundY: number; below: THREE.Vector3 }
+  fx: { heat: number; vel: THREE.Vector3; dust: number; dustColor: number; groundY: number; below: THREE.Vector3; trackY: number | null }
 }
 
-export function Vehicle3D({ v, height }: { v: Vehicle; height: number }) {
+export function Vehicle3D({ v, height, highlight, tools = true }: { v: Vehicle; height: number; highlight?: number | null; tools?: boolean }) {
   const mount = useRef<HTMLDivElement>(null)
   const three = useRef<Scene3D | null>(null)
+  const [view, setView] = useState(loadView)
+  const setV = (patch: Partial<View3D>) => {
+    const nv = { ...view, ...patch }
+    setView(nv)
+    if (three.current) three.current.view = nv
+    try {
+      localStorage.setItem('jaci.3d', JSON.stringify(nv))
+    } catch {
+      /* sem armazenamento */
+    }
+  }
   const vehicles = useStore((s) => s.snap?.vehicles)
   const sunDir = useStore((s) => s.snap?.sun)
   // Sem WebGL (driver, máquina remota): só o aviso.
@@ -174,7 +224,12 @@ export function Vehicle3D({ v, height }: { v: Vehicle; height: number }) {
     }
     renderer.setPixelRatio(window.devicePixelRatio)
     renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
     el.appendChild(renderer.domElement)
+    const labels = document.createElement('div')
+    labels.className = 'v3d-labels'
+    el.appendChild(labels)
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x010207)
     const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 2e6)
@@ -184,7 +239,16 @@ export function Vehicle3D({ v, height }: { v: Vehicle; height: number }) {
     scene.add(hemi)
     const sun = new THREE.DirectionalLight(0xfff4e6, 2.6)
     sun.position.set(30, 50, 20)
-    scene.add(sun)
+    sun.castShadow = true
+    sun.shadow.mapSize.set(2048, 2048)
+    sun.shadow.bias = -0.0004
+    sun.shadow.normalBias = 0.02
+    scene.add(sun, sun.target)
+    // Reflexos suaves no metal (um ambiente de estúdio, fraco para não clarear o espaço).
+    const pmrem = new THREE.PMREMGenerator(renderer)
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    scene.environmentIntensity = 0.3
+    pmrem.dispose()
     // Estrelas.
     const starGeo = new THREE.BufferGeometry()
     const sp = new Float32Array(4000 * 3)
@@ -205,7 +269,18 @@ export function Vehicle3D({ v, height }: { v: Vehicle; height: number }) {
     const ground = new THREE.Mesh(new THREE.CircleGeometry(12000, 64), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 }))
     ground.rotation.x = -Math.PI / 2
     ground.visible = false
+    ground.receiveShadow = true
     scene.add(ground)
+    // Caixa de destaque (o estágio sob o mouse no hangar).
+    const highlightBox = new THREE.Box3Helper(new THREE.Box3(), new THREE.Color(0xffc23d))
+    highlightBox.visible = false
+    scene.add(highlightBox)
+    // Brilho das plumas e do plasma.
+    const composer = new EffectComposer(renderer)
+    composer.addPass(new RenderPass(scene, camera))
+    const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.75, 0.45, 0.8)
+    composer.addPass(bloom)
+    composer.addPass(new OutputPass())
     const holder = new THREE.Group()
     scene.add(holder)
     // Reentrada: choque na frente, rastro atrás, faíscas e a luz laranja.
@@ -237,13 +312,19 @@ export function Vehicle3D({ v, height }: { v: Vehicle; height: number }) {
       dust,
       key: '',
       plumes: [],
+      composer,
+      view: loadView(),
+      others: new Map(),
+      labels,
+      highlight: highlightBox,
       size: 10,
       radius: 2,
       focus: null,
-      fx: { heat: 0, vel: new THREE.Vector3(0, -1, 0), dust: 0, dustColor: 0xb8a890, groundY: -1e5, below: new THREE.Vector3() },
+      fx: { heat: 0, vel: new THREE.Vector3(0, -1, 0), dust: 0, dustColor: 0xb8a890, groundY: -1e5, below: new THREE.Vector3(), trackY: null },
     }
     const resize = () => {
       renderer.setSize(el.clientWidth, el.clientHeight)
+      composer.setSize(el.clientWidth, el.clientHeight)
       camera.aspect = el.clientWidth / Math.max(1, el.clientHeight)
       camera.updateProjectionMatrix()
     }
@@ -255,14 +336,17 @@ export function Vehicle3D({ v, height }: { v: Vehicle; height: number }) {
     const loop = () => {
       const th = three.current!
       const time = clock.getElapsedTime()
-      controls.update()
-      for (const p of th.plumes) {
+      moveCamera(th)
+      for (const p of [...th.plumes, ...[...th.others.values()].flatMap((o) => o.plumes)]) {
         if (!p.group.visible) continue
         ;(p.outer.material as THREE.ShaderMaterial).uniforms.uTime.value = time
         ;(p.core.material as THREE.ShaderMaterial).uniforms.uTime.value = time + 1.7
       }
       animateFx(th, time)
-      renderer.render(scene, camera)
+      placeLabels(th)
+      sun.castShadow = th.view.shadows
+      if (th.view.bloom) composer.render()
+      else renderer.render(scene, camera)
       raf = requestAnimationFrame(loop)
     }
     loop()
@@ -273,6 +357,7 @@ export function Vehicle3D({ v, height }: { v: Vehicle; height: number }) {
       disposeGroup(scene)
       renderer.dispose()
       el.removeChild(renderer.domElement)
+      el.removeChild(labels)
     }
   }, [noGl])
 
@@ -320,6 +405,13 @@ export function Vehicle3D({ v, height }: { v: Vehicle; height: number }) {
         th.size = size
         th.camera.position.set(size * 1.1, size * 0.45, size * 1.35)
         th.controls.target.set(0, 0, 0)
+        // A sombra cobre a nave (e o chão logo embaixo).
+        const sc = th.sun.shadow.camera
+        sc.left = sc.bottom = -size * 0.75
+        sc.right = sc.top = size * 0.75
+        sc.near = 0.1
+        sc.far = size * 8
+        sc.updateProjectionMatrix()
       }
     }
     for (const p of th.plumes) {
@@ -331,18 +423,10 @@ export function Vehicle3D({ v, height }: { v: Vehicle; height: number }) {
     const { up, east, north } = localFrame(v.r as V3)
     const toScene = (d: V3): V3 => [d[0] * east[0] + d[1] * east[1] + d[2] * east[2], d[0] * up[0] + d[1] * up[1] + d[2] * up[2], -(d[0] * north[0] + d[1] * north[1] + d[2] * north[2])]
     const q = (host.q ?? v.q) as Q | undefined
-    if (q) {
-      const rot = (b: V3): V3 => {
-        const [w, x, y, z] = q
-        const u: V3 = [x, y, z]
-        const tt = cross(u, b).map((c) => c * 2) as V3
-        const c2 = cross(u, tt)
-        return [b[0] + tt[0] * w + c2[0], b[1] + tt[1] * w + c2[1], b[2] + tt[2] * w + c2[2]]
-      }
-      const m = new THREE.Matrix4().makeBasis(new THREE.Vector3(...unit(toScene(rot([1, 0, 0])))), new THREE.Vector3(...unit(toScene(rot([0, 1, 0])))), new THREE.Vector3(...unit(toScene(rot([0, 0, 1])))))
-      th.holder.quaternion.setFromRotationMatrix(m)
-    }
+    if (q) th.holder.quaternion.setFromRotationMatrix(attitudeMatrix(q, toScene))
     th.holder.updateMatrixWorld(true)
+    updateOthers(th, host, docked, vehicles ?? [], toScene)
+    updateHighlight(th, highlight)
     if (th.focus) {
       // A visitante acoplada em primeiro plano, com a porta e a estação atrás.
       const fb = solidBounds(th.focus)
@@ -353,19 +437,165 @@ export function Vehicle3D({ v, height }: { v: Vehicle; height: number }) {
       th.focus = null
     }
     // Luz do Sol de verdade (escura na sombra do planeta).
-    if (sunDir) th.sun.position.set(...(toScene(sunDir as V3).map((x) => x * 100) as V3))
+    if (sunDir) th.sun.position.set(...(toScene(sunDir as V3).map((x) => x * th.size * 3) as V3))
     // Na sombra do planeta fica a luz refletida dele (fraca, azulada).
     th.sun.intensity = v.tm?.['eps.sunlit'] === 0 ? 0.25 : 2.6
     th.hemi.intensity = v.tm?.['eps.sunlit'] === 0 ? 0.9 : 0.55
     updateSurface(th, v)
     updateReentry(th, v, toScene)
-  }, [v, vehicles, sunDir])
+  }, [v, vehicles, sunDir, highlight])
 
   return (
-    <div ref={mount} style={{ width: '100%', height }} role="img" aria-label={t('A nave em 3D')}>
-      {noGl && <div className="loading muted" style={{ height }}>{t('Sem WebGL neste navegador: a vista 3D não está disponível.')}</div>}
+    <div className="v3d" style={{ height }}>
+      <div ref={mount} style={{ width: '100%', height }} role="img" aria-label={t('A nave em 3D')}>
+        {noGl && <div className="loading muted" style={{ height }}>{t('Sem WebGL neste navegador: a vista 3D não está disponível.')}</div>}
+      </div>
+      {tools && !noGl && (
+        <div className="v3d-tools">
+          {(
+            [
+              ['free', t('Livre'), t('Arraste para girar, role para aproximar')],
+              ['chase', t('Perseguir'), t('Atrás da nave, no sentido do movimento')],
+              ['ground', t('Do chão'), t('Câmera fixa no solo acompanhando (lançamento e pouso)')],
+            ] as [CameraMode, string, string][]
+          ).map(([m, label, tip]) => (
+            <button key={m} className={`small ${view.cam === m ? 'active' : ''}`} onClick={() => setV({ cam: m })} title={tip} aria-pressed={view.cam === m}>
+              {label}
+            </button>
+          ))}
+          <button className={`small ${view.bloom ? 'active' : ''}`} onClick={() => setV({ bloom: !view.bloom })} title={t('Brilho das plumas e do plasma')} aria-pressed={view.bloom}>
+            ✨
+          </button>
+          <button className={`small ${view.shadows ? 'active' : ''}`} onClick={() => setV({ shadows: !view.shadows })} title={t('Sombras')} aria-pressed={view.shadows}>
+            ◐
+          </button>
+        </div>
+      )}
     </div>
   )
+}
+
+/** Câmera: livre (a do mouse), perseguindo a nave ou parada no chão olhando para ela. */
+function moveCamera(th: Scene3D) {
+  const { camera, controls } = th
+  const mode = th.view.cam
+  controls.enabled = mode === 'free'
+  if (mode === 'free') {
+    if (camera.fov !== 40) {
+      camera.fov = 40
+      camera.updateProjectionMatrix()
+    }
+    controls.update()
+    return
+  }
+  const size = th.size
+  if (mode === 'ground' && th.fx.trackY != null) {
+    // Uma câmera de rastreio no solo, a uma distância fixa da plataforma; a teleobjetiva fecha com a distância.
+    const d = Math.max(60, size * 2.5)
+    camera.position.set(d * 0.8, th.fx.trackY + 2, d * 0.6)
+    camera.lookAt(0, 0, 0)
+    const dist = camera.position.length()
+    const fov = THREE.MathUtils.clamp((2 * Math.atan((size * 0.9) / dist) * 180) / Math.PI, 0.5, 50)
+    if (Math.abs(camera.fov - fov) > 0.01) {
+      camera.fov = fov
+      camera.updateProjectionMatrix()
+    }
+    return
+  }
+  // Perseguição: atrás, no sentido contrário ao do movimento, um pouco acima.
+  const dir = th.fx.vel.lengthSq() > 0 ? th.fx.vel.clone().normalize() : new THREE.Vector3(0, 1, 0)
+  // De três quartos: atrás e um pouco de lado, para ver as plumas e o corpo.
+  const side = new THREE.Vector3(0, 1, 0).cross(dir)
+  if (side.lengthSq() < 1e-6) side.set(1, 0, 0)
+  const want = dir
+    .clone()
+    .multiplyScalar(-size * 1.2)
+    .addScaledVector(side.normalize(), size * 0.8)
+    .add(new THREE.Vector3(0, size * 0.3, 0))
+  // Vindo de longe (da câmera do chão), pula direto; perto, desliza.
+  if (camera.position.distanceTo(want) > size * 4) camera.position.copy(want)
+  else camera.position.lerp(want, 0.08)
+  camera.lookAt(0, 0, 0)
+  if (camera.fov !== 40) {
+    camera.fov = 40
+    camera.updateProjectionMatrix()
+  }
+}
+
+/** Naves por perto (até 5 km, as 6 mais próximas): estágios largados, a coifa, o alvo do encontro. */
+function updateOthers(th: Scene3D, host: Vehicle, docked: Vehicle[], all: Vehicle[], toScene: (d: V3) => V3) {
+  if (!host.r) return
+  const skip = new Set([host.id, ...docked.map((d) => d.id)])
+  const near = all
+    .filter((o) => !skip.has(o.id) && o.attached_to == null && o.r && o.central === host.central && o.id >= 0)
+    .map((o) => ({ o, d: Math.hypot(o.r![0] - host.r![0], o.r![1] - host.r![1], o.r![2] - host.r![2]) }))
+    .filter((x) => x.d < 5_000)
+    .sort((a, b) => a.d - b.d)
+    .slice(0, 6)
+  const keep = new Set(near.map((x) => x.o.id))
+  for (const [id, o] of th.others) {
+    if (!keep.has(id)) {
+      disposeGroup(o.group)
+      th.scene.remove(o.group)
+      o.label.remove()
+      th.others.delete(id)
+    }
+  }
+  for (const { o, d } of near) {
+    const key = shapeKey(o)
+    let ent = th.others.get(o.id)
+    if (!ent || ent.key !== key) {
+      if (ent) {
+        disposeGroup(ent.group)
+        th.scene.remove(ent.group)
+        ent.label.remove()
+      }
+      const b = buildVehicle(o)
+      const g = new THREE.Group()
+      g.add(b.group)
+      th.scene.add(g)
+      const label = document.createElement('div')
+      label.className = 'v3d-label'
+      th.labels.appendChild(label)
+      ent = { group: g, key, plumes: b.plumes, label }
+      th.others.set(o.id, ent)
+    }
+    ent.label.textContent = `${o.name} · ${d < 1000 ? `${Math.round(d)} m` : `${(d / 1000).toFixed(1)} km`}`
+    const rel = toScene([o.r![0] - host.r![0], o.r![1] - host.r![1], o.r![2] - host.r![2]])
+    ent.group.position.set(...rel)
+    if (o.q) ent.group.quaternion.setFromRotationMatrix(attitudeMatrix(o.q as Q, toScene))
+    for (const p of ent.plumes) updatePlume(p, o)
+  }
+}
+
+/** Rótulos das outras naves na posição delas na tela (escondidos atrás da câmera). */
+function placeLabels(th: Scene3D) {
+  const w = th.renderer.domElement.clientWidth
+  const h = th.renderer.domElement.clientHeight
+  for (const o of th.others.values()) {
+    const p = o.group.position.clone().project(th.camera)
+    const show = p.z < 1 && Math.abs(p.x) < 1.1 && Math.abs(p.y) < 1.1
+    o.label.style.display = show ? 'block' : 'none'
+    if (show) o.label.style.transform = `translate(${((p.x + 1) / 2) * w}px, ${((1 - p.y) / 2) * h}px)`
+  }
+}
+
+/** Contorno do estágio destacado (índice na pilha), ou nada. */
+function updateHighlight(th: Scene3D, stage: number | null | undefined) {
+  if (stage == null) {
+    th.highlight.visible = false
+    return
+  }
+  const box = new THREE.Box3()
+  th.holder.traverse((o) => {
+    const m = o as THREE.Mesh
+    if (m.isMesh && o.userData.stage === stage && !o.parent?.userData.fx) {
+      m.geometry.computeBoundingBox()
+      box.union(m.geometry.boundingBox!.clone().applyMatrix4(m.matrixWorld))
+    }
+  })
+  th.highlight.visible = !box.isEmpty()
+  if (th.highlight.visible) th.highlight.box.copy(box.expandByScalar(0.15))
 }
 
 /** Plumas dos motores acesos: força pelo empuxo, abertura pela altitude (menos ar, pluma mais larga). */
@@ -395,6 +625,8 @@ function updateSurface(th: Scene3D, v: Vehicle) {
   const body = v.central
   const bounds = solidBounds(th.holder)
   const near = SURFACE.has(body) && (altM < 4000 || ['prelaunch', 'landed', 'splashdown'].includes(v.phase))
+  // A câmera do chão acompanha até 40 km de altura (o solo pode já estar escondido).
+  th.fx.trackY = SURFACE.has(body) && altM < 40_000 ? bounds.min.y - (['landed', 'prelaunch', 'splashdown'].includes(v.phase) ? 0 : altM) : null
   // Planeta: uma esfera com a curvatura de verdade "vista de cima", cada vez mais longe.
   th.planet.visible = !near && body !== 'sun'
   if (th.planet.visible) {

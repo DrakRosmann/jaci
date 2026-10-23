@@ -377,9 +377,15 @@ export function buildVehicle(v: Vehicle): Built {
   const stages = v.stages ?? []
   let x = 0
   let maxR = 0.5
+  // Estágio a que as peças criadas pertencem (para destacar no hangar).
+  let cur = 0
+  const tag = <T extends THREE.Object3D>(o: T): T => {
+    o.userData.stage = cur
+    return o
+  }
   /** Cilindro (ou tronco de cone) ao longo do X, de `at` a `at + len`. */
   const cyl = (r1: number, r2: number, len: number, mat: THREE.Material, at: number, y = 0, z = 0, seg = 32) => {
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(r2, r1, len, seg, 1, false), mat)
+    const m = tag(new THREE.Mesh(new THREE.CylinderGeometry(r2, r1, len, seg, 1, false), mat))
     m.rotation.z = -Math.PI / 2
     m.position.set(at + len / 2, y, z)
     g.add(m)
@@ -387,7 +393,7 @@ export function buildVehicle(v: Vehicle): Built {
     return m
   }
   const box = (sx: number, sy: number, sz: number, mat: THREE.Material, px: number, py = 0, pz = 0) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat)
+    const m = tag(new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat))
     m.position.set(px, py, pz)
     g.add(m)
     return m
@@ -402,7 +408,7 @@ export function buildVehicle(v: Vehicle): Built {
       pts.push(new THREE.Vector2(r * (0.28 + 0.72 * Math.pow(s, 0.6)), len * (1 - s)))
     }
     const geo = new THREE.LatheGeometry(pts, 28)
-    const m = new THREE.Mesh(geo, MAT.nozzleHot.clone())
+    const m = tag(new THREE.Mesh(geo, MAT.nozzleHot.clone()))
     m.rotation.z = Math.PI / 2 // Y do torno → −X
     m.position.set(exitX + len, y, z)
     g.add(m)
@@ -445,6 +451,7 @@ export function buildVehicle(v: Vehicle): Built {
   // Lançador: estágios de baixo para cima.
   stages.forEach((s, i) => {
     if (s.spacecraft) return
+    cur = i
     const d = s.diameter ?? 1
     const len = s.length ?? d * 3
     const r = d / 2
@@ -500,9 +507,22 @@ export function buildVehicle(v: Vehicle): Built {
 
   const craft = stages.filter((s) => s.spacecraft)
   const fairing = (v.items ?? []).some((i) => i.id === 'fairing')
+  // Daqui em diante, a nave (o primeiro estágio "spacecraft").
+  cur = stages.findIndex((s) => s.spacecraft)
+  if (cur < 0) cur = stages.length
   const coreR = Math.max(0.4, ...stages.filter((s) => !s.spacecraft && !s.boosters).map((s) => (s.diameter ?? 1) / 2))
 
-  if (v.kind === 'shuttle' || v.shape === 'winged') {
+  if (v.kind === 'debris') {
+    // Estágio largado: só ele (sem a carga em cima); sem estágio, meia coifa caindo.
+    if (!stages.length) {
+      const half = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 3, 24, 1, true, 0, Math.PI), MAT.hull)
+      half.material = MAT.hull
+      half.rotation.z = -Math.PI / 2
+      half.position.set(1.5, 0, 0)
+      g.add(half)
+      x = 3
+    }
+  } else if (v.kind === 'shuttle' || v.shape === 'winged') {
     // Orbitador: ao lado do tanque externo na subida; sozinho em órbita.
     const withTank = stages.some((s) => !s.spacecraft && s.cryogenic)
     const L = 37
@@ -729,9 +749,12 @@ export function buildVehicle(v: Vehicle): Built {
       x += len
     }
   }
-  // Centraliza ao longo do X.
+  // Centraliza ao longo do X e liga as sombras (menos nas plumas).
   const mid = x / 2
   g.children.forEach((c) => (c.position.x -= mid))
+  g.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh && !o.parent?.userData.fx) o.castShadow = o.receiveShadow = true
+  })
   return { group: g, plumes, length: Math.max(x, 2), radius: maxR }
 }
 

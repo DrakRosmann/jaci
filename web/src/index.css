@@ -2630,3 +2630,77 @@ table.windows td .dot {
   gap: 10px 16px;
   align-items: center;
 }
+
+/* Vista 3D: câmera, brilho e sombras por cima */
+.v3d {
+  position: relative;
+  width: 100%;
+}
+.v3d-tools {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 3px;
+  z-index: 2;
+  opacity: 0.85;
+}
+.v3d-tools button {
+  background: #0a1222cc;
+}
+.v3d-tools button.active {
+  background: #1d3b66dd;
+}
+.engine-sheet {
+  color: var(--accent-2);
+}
+.test-events {
+  margin-top: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.test-events .tev {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 8px;
+}
+.test-events .tev.good {
+  color: var(--good);
+}
+.test-events .tev.warn {
+  color: var(--warn);
+}
+.test-events .tev.alarm {
+  color: var(--bad);
+}
+.banner.good {
+  background: color-mix(in srgb, var(--good) 14%, var(--panel));
+  border: 1px solid var(--good);
+  color: var(--good);
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+.v3d > div:first-child {
+  position: relative;
+}
+.v3d-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.v3d-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font: 11px var(--mono);
+  color: #ffd27a;
+  white-space: nowrap;
+  padding-left: 10px;
+  border-left: 2px solid #ffd27a;
+  text-shadow: 0 0 4px #000;
+}

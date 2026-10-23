@@ -1155,7 +1155,7 @@ fn relative_lvlh(v: &Vehicle, tg: &TargetInfo) -> (Vec3, Vec3) {
 /// livre de outra (a menos de 1,5 m, se aproximando a menos de 0,4 m/s) é
 /// capturada, como na sonda e no cone de uma porta de verdade.
 fn manual_capture(v: &Vehicle, env: &Env, out: &mut StepOutput) {
-    if v.attached_to.is_some() || v.guidance.program != Program::None || v.systems.is_none() || v.phase.is_final() {
+    if v.attached_to.is_some() || v.guidance.program != Program::None || v.systems.is_none() || v.phase.is_final() || env.t < v.guidance.capture_after {
         return;
     }
     for tg in env.targets.iter().filter(|x| x.id != v.id && x.central == v.central && x.port_free) {

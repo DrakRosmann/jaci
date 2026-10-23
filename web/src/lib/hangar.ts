@@ -4,6 +4,7 @@
 // missoes/cenarios, veja missoes/LEIAME.md) e vai junto, num comentário, para
 // poder ser reaberto no hangar.
 
+import { t } from './i18n'
 import type { Vehicle } from '../types'
 
 export const G0 = 9.80665
@@ -449,4 +450,28 @@ export function previewVehicle(d: Design): Vehicle {
     v: [0, 0, 0],
     q: [1, 0, 0, 0],
   }
+}
+
+/** Preço de cada motor (milhões de dólares, por unidade): ordem de grandeza dos de verdade. */
+const ENGINE_COST: Record<string, number> = { k25: 0.5, k25v: 0.6, k900: 4, k980v: 6, m2300: 8, m2500v: 10, h1860: 40, h110v: 12, n27v: 1.5, n45: 3, s100: 0.8, s1000: 6, s5000: 25, s13000: 50 }
+
+/** Custo estimado do lançador (milhões de dólares): motores, estrutura e propelente. */
+export function launcherCost(d: Design): number {
+  return d.stages.reduce((sum, s) => {
+    const ms = stageMasses(s)
+    const structure = ms.dry - engine(s.engine).mass * ms.engines
+    const propCost = s.propellant === 'solid' ? 8 : s.propellant === 'hydrolox' ? 4 : 0.6 // dólares por kg
+    return sum + (ENGINE_COST[s.engine] ?? 2) * ms.engines + (structure * 1500) / 1e6 + (ms.prop * propCost) / 1e6
+  }, 0)
+}
+
+/** A ficha de um motor em uma linha. */
+export function engineSheet(id: string): string {
+  const e = engine(id)
+  const sl = (e.thrust * e.ispSl) / e.ispVac
+  const parts = [t('{sl} kN ao nível do mar / {vac} kN no vácuo', { sl: Math.round(sl), vac: Math.round(e.thrust) }), `Isp ${e.ispSl}/${e.ispVac} s`]
+  if (e.mass) parts.push(`${e.mass} kg`)
+  if (e.propellant === 'solid') parts.push(t('não desliga'))
+  else parts.push(e.minThrottle < 1 ? t('regula até {p}%', { p: Math.round(e.minThrottle * 100) }) : t('sem regulagem'), t('{n} ignição(ões)', { n: e.ignitions }))
+  return parts.join(' · ')
 }

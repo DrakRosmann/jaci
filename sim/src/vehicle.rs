@@ -505,6 +505,9 @@ pub struct Guidance {
     /// aparece no diretor.
     #[serde(default)]
     pub manual: bool,
+    /// Depois de desacoplar, a porta só captura de novo a partir deste instante.
+    #[serde(default)]
+    pub capture_after: f64,
 }
 
 /// Powered Explicit Guidance: fr(t) = A + B·t (+ gravidade menos centrífuga),
@@ -554,6 +557,7 @@ impl Default for Guidance {
             legacy_ascent: false,
             auto_pdi_alt: None,
             manual: false,
+            capture_after: 0.0,
         }
     }
 }

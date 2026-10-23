@@ -234,7 +234,13 @@ sequência automática de ativação de satélite.
     mar ou a plataforma com a torre na Terra) e a poeira, ou a fumaça na plataforma, levantada
     pelo motor;
   - as naves acopladas presas nas portas da estação: selecionando a visitante, a câmera mira nela
-    e na porta.
+    e na porta;
+  - as outras naves por perto (até 5 km): estágios largados caindo, a coifa, o alvo de um
+    encontro, cada uma com um rótulo de nome e distância.
+
+  Sombras do Sol de verdade, reflexos no metal e brilho nas plumas e no plasma (os dois se
+  desligam). Câmeras: livre, perseguição (de três quartos, no sentido do movimento) e do chão
+  (rastreio a partir da plataforma até 40 km, com a teleobjetiva fechando).
 * **Hangar (VAB):** montar foguetes e missões, como no Kerbal Space Program.
   - **Estágios:** cada um com propelente (querosene, metano ou hidrogênio com oxigênio,
     hipergólicos ou sólido), motor (de nível do mar ou de vácuo, com empuxo, Isp, massa,
@@ -247,6 +253,13 @@ sequência automática de ativação de satélite.
     cada destino pede.
   - **Missão:** da plataforma (local, T-, órbita alvo, rumo, tempo bom) ou já em órbita da Terra,
     da Lua ou de Marte.
+  - **Teste de voo:** o servidor voa o foguete no próprio simulador, num mundo à parte e sem
+    salvar nada, e mostra o veredito (em órbita, suborbital, destruído), a órbita, o tempo até
+    ela, a pressão dinâmica e a carga g máximas, o Δv que sobrou, gráficos da altitude, da
+    velocidade, de q e de g, e os eventos do voo.
+  - **Mais:** a ficha de cada motor (empuxo ao nível do mar e no vácuo, Isp, massa, regulagem,
+    reignições), desfazer e refazer (Ctrl+Z), duplicar estágio, o custo estimado do lançador e o
+    estágio sob o mouse destacado no 3D.
   - **Salvar e lançar:** grava `veiculos/<nome>.toml` e `cenarios/<nome>-missao.toml` (o projeto
     vai num comentário para reabrir no hangar) e carrega a missão.
 * **Escola de controle (EDU):** lições curtas para aprender a sala:

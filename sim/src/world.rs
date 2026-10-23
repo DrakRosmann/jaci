@@ -1083,6 +1083,7 @@ impl World {
                 let dr = -y * offset;
                 veh!().attached_to = None;
                 veh!().phase = Phase::Orbit;
+                veh!().guidance.capture_after = t + 60.0;
                 veh!().r = hr + dr;
                 veh!().v = hv + (z * n).cross(dr) - y * 0.1;
                 if let Some(h) = self.vehicle_mut(host) {
