@@ -1,7 +1,10 @@
-//! Tempo da simulação: segundos desde J2000.0 (1º de janeiro de 2000, 12:00).
+//! Tempo da simulação: segundos desde 1º de janeiro de 2000, 12:00 UTC, em dias
+//! de 86 400 s (o relógio de parede, sem os segundos intercalares).
 //!
-//! A diferença entre TT e UTC (pouco mais de um minuto) é ignorada: o mesmo
-//! relógio serve às efemérides e ao relógio de parede.
+//! As efemérides usam o Tempo Terrestre (TT), que corre uniforme e está à
+//! frente do UTC pelos segundos intercalares acumulados mais 32,184 s (69,184 s
+//! desde 2017): [`tt`] converte. A rotação da Terra segue o UT1, que o UTC
+//! acompanha a menos de 0,9 s, então o GMST usa o próprio relógio.
 
 use crate::math::{TAU, wrap_2pi};
 
@@ -17,6 +20,62 @@ pub fn julian_date(t: f64) -> f64 {
 /// Séculos julianos desde J2000.
 pub fn centuries(t: f64) -> f64 {
     t / (DAY * 36_525.0)
+}
+
+/// TAI − UTC (s) desde cada data: os segundos intercalares do IERS (Bulletin C).
+/// Quando o IERS anunciar um novo, acrescente aqui.
+const LEAP_SECONDS: [(i32, u32, f64); 28] = [
+    (1972, 1, 10.0),
+    (1972, 7, 11.0),
+    (1973, 1, 12.0),
+    (1974, 1, 13.0),
+    (1975, 1, 14.0),
+    (1976, 1, 15.0),
+    (1977, 1, 16.0),
+    (1978, 1, 17.0),
+    (1979, 1, 18.0),
+    (1980, 1, 19.0),
+    (1981, 7, 20.0),
+    (1982, 7, 21.0),
+    (1983, 7, 22.0),
+    (1985, 7, 23.0),
+    (1988, 1, 24.0),
+    (1990, 1, 25.0),
+    (1991, 1, 26.0),
+    (1992, 7, 27.0),
+    (1993, 7, 28.0),
+    (1994, 7, 29.0),
+    (1996, 1, 30.0),
+    (1997, 7, 31.0),
+    (1999, 1, 32.0),
+    (2006, 1, 33.0),
+    (2009, 1, 34.0),
+    (2012, 7, 35.0),
+    (2015, 7, 36.0),
+    (2017, 1, 37.0),
+];
+
+/// TT − TAI (s), fixo por definição.
+pub const TT_MINUS_TAI: f64 = 32.184;
+
+/// TAI − UTC (s) num instante (antes de 1972, os 10 s do começo da tabela).
+pub fn tai_minus_utc(t: f64) -> f64 {
+    LEAP_SECONDS
+        .iter()
+        .rev()
+        .find(|(y, m, _)| t >= from_calendar(*y, *m, 1, 0, 0, 0.0))
+        .map_or(LEAP_SECONDS[0].2, |(_, _, s)| *s)
+}
+
+/// TT − UTC (s): 64,184 s em J2000, 69,184 s desde 2017.
+pub fn tt_minus_utc(t: f64) -> f64 {
+    tai_minus_utc(t) + TT_MINUS_TAI
+}
+
+/// Segundos de TT desde J2000.0 (1º de janeiro de 2000, 12:00 TT), a escala
+/// das efemérides, a partir do relógio da simulação (UTC).
+pub fn tt(t: f64) -> f64 {
+    t + tt_minus_utc(t)
 }
 
 /// Tempo sideral médio de Greenwich (rad): o quanto a Terra girou em relação ao
@@ -137,6 +196,19 @@ mod tests {
     fn gmst_em_j2000() {
         // Em J2000 o GMST é 280,46°.
         assert!((gmst(0.0).to_degrees() - 280.460_618_37).abs() < 1e-6);
+    }
+
+    #[test]
+    fn tt_e_utc() {
+        // Em J2000: 32 s intercalares + 32,184 s.
+        assert!((tt_minus_utc(0.0) - 64.184).abs() < 1e-9);
+        // Antes e depois do segundo intercalar de 2016-12-31.
+        assert!((tt_minus_utc(from_calendar(2016, 12, 31, 23, 59, 59.0)) - 68.184).abs() < 1e-9);
+        assert!((tt_minus_utc(from_calendar(2017, 1, 1, 0, 0, 0.0)) - 69.184).abs() < 1e-9);
+        assert!((tt_minus_utc(from_calendar(2026, 10, 23, 12, 0, 0.0)) - 69.184).abs() < 1e-9);
+        assert!((tt_minus_utc(from_calendar(1970, 1, 1, 0, 0, 0.0)) - 42.184).abs() < 1e-9);
+        let t = from_calendar(2026, 1, 1, 0, 0, 0.0);
+        assert!((tt(t) - t - 69.184).abs() < 1e-6);
     }
 
     #[test]

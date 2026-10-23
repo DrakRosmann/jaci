@@ -133,7 +133,8 @@ também mudam.
   universais, Lambert, Hohmann, bielíptica, Clohessy-Wiltshire. Cônicas remendadas: o veículo troca
   de corpo central ao cruzar a esfera de influência (Terra, Lua, Sol, planetas).
 * **Efemérides:** elementos médios de Standish (JPL, 1800–2050) para os planetas, elementos médios
-  com regressão dos nodos para a Lua, tempo sideral de Greenwich, WGS-84.
+  com regressão dos nodos para a Lua, calculados em Tempo Terrestre (TT = UTC + segundos
+  intercalares + 32,184 s, pela tabela do IERS); tempo sideral de Greenwich; WGS-84.
 * **Atmosfera:** Padrão dos EUA de 1976 até 86 km e tabela exponencial até 1000 km; vento com
   corrente de jato; atmosferas exponenciais de Marte, Vênus e gigantes gasosos.
 * **Veículos:** pilha de estágios com boosters em paralelo, motores líquidos (partida, potência,
@@ -254,7 +255,8 @@ da Terra, corrige a trajetória duas vezes, chega com o periastro pedido e entra
   limitada até o alvo); a dinâmica de corpo rígido vale para naves em órbita.
 * O guiamento de subida não é o PEG nem o de nenhum veículo real; o RTLS do ônibus espacial é
   simplificado.
-* TT e UTC são tratados como iguais (diferença de pouco mais de um minuto).
+* UT1 é tratado como igual ao UTC (diferença abaixo de 0,9 s); a tabela de segundos intercalares
+  (`sim/src/time.rs`) precisa de uma linha nova quando o IERS anunciar um.
 * Telemetria do veículo externo por CCSDS: só o pacote de navegação (APID 0x200).
 
 ## Créditos

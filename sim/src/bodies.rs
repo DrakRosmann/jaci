@@ -7,7 +7,7 @@
 
 use crate::math::{DEG, Vec3};
 use crate::orbit::{Elements, mean_to_true, state_from_elements};
-use crate::time::{DAY, centuries, gmst};
+use crate::time::{DAY, centuries, gmst, tt};
 use serde::{Deserialize, Serialize};
 
 pub const AU: f64 = 149_597_870_700.0;
@@ -252,7 +252,8 @@ impl Body {
         (ra - rb, va - vb)
     }
 
-    /// Elementos orbitais médios na eclíptica J2000.
+    /// Elementos orbitais médios na eclíptica J2000. `t` é o relógio da
+    /// simulação (UTC); os elementos são calculados em TT.
     pub fn elements(self, t: f64) -> Option<Elements> {
         if self == Body::Moon {
             return Some(moon_elements(t));
@@ -293,7 +294,7 @@ impl Body {
             ],
             Body::Sun | Body::Moon => return None,
         };
-        let tc = centuries(t);
+        let tc = centuries(tt(t));
         let v: Vec<f64> = (0..6).map(|i| k[0][i] + k[1][i] * tc).collect();
         let (a, e, inc, l, varpi, node) = (v[0] * AU, v[1], v[2] * DEG, v[3] * DEG, v[4] * DEG, v[5] * DEG);
         let argp = varpi - node;
@@ -353,7 +354,7 @@ impl Body {
 }
 
 fn moon_elements(t: f64) -> Elements {
-    let d = t / DAY;
+    let d = tt(t) / DAY;
     let l = (218.316 + 13.176_396 * d) * DEG;
     let m = (134.963 + 13.064_993 * d) * DEG;
     let f = (93.272 + 13.229_350 * d) * DEG;
