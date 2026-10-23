@@ -3,6 +3,7 @@
 //! por UDP com computadores de bordo de verdade.
 
 mod ksp;
+mod recording;
 mod snapshot;
 
 use anyhow::Context;
@@ -12,7 +13,7 @@ use axum::{
         Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    http::StatusCode,
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
     routing::get,
 };
@@ -80,6 +81,12 @@ struct Args {
     /// Envia a telemetria dos veículos simulados em CCSDS para este endereço UDP.
     #[arg(long)]
     ccsds_out: Option<String>,
+    /// Começa gravando a missão (para reproduzir depois no Instrutor).
+    #[arg(long)]
+    record: bool,
+    /// Pasta das gravações (padrão: ao lado da pasta dos estados salvos).
+    #[arg(long)]
+    recordings_dir: Option<PathBuf>,
 }
 
 pub struct App {
@@ -98,6 +105,47 @@ pub struct App {
     pub history: HashMap<u32, snapshot::Hist>,
     /// Ligação com o KSP (kOS), se ativa.
     pub ksp: Option<ksp::KspLink>,
+    pub recordings_dir: PathBuf,
+    /// Gravação em andamento.
+    pub recorder: Option<recording::Recorder>,
+    /// Reprodução de uma gravação: a simulação fica parada enquanto isso.
+    pub replay: Option<recording::Replay>,
+}
+
+impl App {
+    /// Começa a gravar (nome automático se vazio).
+    fn start_recording(&mut self, name: Option<&str>) -> Result<String, String> {
+        if self.replay.is_some() {
+            return Err("em reprodução: saia dela para gravar".into());
+        }
+        if let Some(r) = &self.recorder {
+            return Err(format!("já gravando: {}", r.name));
+        }
+        let name = name.map(recording::clean_name).filter(|n| !n.is_empty()).unwrap_or_else(|| {
+            let (y, mo, d, h, mi, s) = jaci_sim::time::to_calendar(now_j2000());
+            format!("{}-{y:04}{mo:02}{d:02}-{h:02}{mi:02}{:02}", self.world.scenario, s.floor() as u32)
+        });
+        let hello = snapshot::hello(self);
+        let mut rec = recording::Recorder::create(&self.recordings_dir, &name, &hello, self.world.event_seq).map_err(|e| e.to_string())?;
+        // O dicionário atual entra logo no começo.
+        let _ = rec.dictionary(&snapshot::dictionary(self).to_string());
+        let msg = format!("Gravação iniciada: {}", rec.name);
+        self.world.event(None, jaci_sim::vehicle::Level::Info, &msg);
+        self.recorder = Some(rec);
+        Ok(msg)
+    }
+
+    /// Termina a gravação em andamento, se houver.
+    fn stop_recording(&mut self) -> Option<String> {
+        let rec = self.recorder.take()?;
+        let (name, frames) = (rec.name.clone(), rec.frames);
+        let msg = match rec.finish() {
+            Ok(_) => format!("Gravação encerrada: {name} ({frames} quadros)"),
+            Err(e) => format!("Gravação {name} encerrada com erro: {e}"),
+        };
+        self.world.event(None, jaci_sim::vehicle::Level::Info, &msg);
+        Some(msg)
+    }
 }
 
 type Shared = Arc<Mutex<App>>;
@@ -138,6 +186,11 @@ fn states_dir(args: &Args) -> PathBuf {
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
         .unwrap_or_else(|| PathBuf::from("."));
     data.join("jaci/estados")
+}
+
+/// Gravações: a pedida ou a pasta irmã da dos estados salvos.
+fn recordings_dir(args: &Args, states: &std::path::Path) -> PathBuf {
+    args.recordings_dir.clone().unwrap_or_else(|| states.with_file_name("gravacoes"))
 }
 
 fn open_browser(url: &str) {
@@ -187,9 +240,13 @@ async fn main() -> anyhow::Result<()> {
         None => None,
     };
     tracing::info!("cenário {} em {}", world.mission, format_utc(world.t));
+    let states = states_dir(&args);
     let app = Arc::new(Mutex::new(App {
         world,
-        states_dir: states_dir(&args),
+        recordings_dir: recordings_dir(&args, &states),
+        recorder: None,
+        replay: None,
+        states_dir: states,
         sent_events: 0,
         dict_sig: String::new(),
         tc_routes: HashMap::new(),
@@ -201,6 +258,12 @@ async fn main() -> anyhow::Result<()> {
     {
         let mut a = app.lock().unwrap();
         a.sent_events = a.world.event_seq;
+        if args.record {
+            match a.start_recording(None) {
+                Ok(m) => tracing::info!("{m} em {}", a.recordings_dir.display()),
+                Err(e) => tracing::warn!("não deu para gravar: {e}"),
+            }
+        }
     }
     let (tx, _) = broadcast::channel::<Arc<str>>(64);
 
@@ -224,20 +287,48 @@ async fn main() -> anyhow::Result<()> {
             let mut last = Instant::now();
             let mut last_snap = Instant::now();
             let mut last_hist = Instant::now();
+            let mut last_rec = Instant::now();
             loop {
                 tick.tick().await;
                 let now = Instant::now();
                 let dt = (now - last).as_secs_f64().min(0.25);
                 last = now;
                 let mut a = app.lock().unwrap();
+                // Reproduzindo: a simulação espera; vão os quadros gravados.
+                if let Some(rp) = a.replay.as_mut() {
+                    if now - last_snap >= Duration::from_millis(200) {
+                        let wall = (now - last_snap).as_secs_f64();
+                        last_snap = now;
+                        if let Some(f) = rp.tick(wall) {
+                            let _ = tx.send(f.into());
+                        }
+                    }
+                    continue;
+                }
                 a.world.advance(dt);
                 if now - last_snap >= Duration::from_millis(200) {
                     last_snap = now;
                     if let Some(dict) = snapshot::dictionary_if_changed(&mut a) {
+                        if let Some(rec) = a.recorder.as_mut() {
+                            let _ = rec.dictionary(&dict);
+                        }
                         let _ = tx.send(dict.into());
                     }
                     let s = snapshot::snapshot(&mut a);
                     let _ = tx.send(s.into());
+                }
+                // Gravação: um quadro por segundo, com os eventos do intervalo.
+                if a.recorder.is_some() && now - last_rec >= Duration::from_secs(1) {
+                    last_rec = now;
+                    let since = a.recorder.as_ref().map_or(0, |r| r.event_seq);
+                    let frame = snapshot::snapshot_value(&a, since);
+                    let seq = a.world.event_seq;
+                    let rec = a.recorder.as_mut().unwrap();
+                    rec.event_seq = seq;
+                    if let Err(e) = rec.frame(&frame) {
+                        tracing::warn!("gravação interrompida: {e}");
+                        a.stop_recording();
+                    }
                 }
                 if now - last_hist >= Duration::from_millis(500) {
                     last_hist = now;
@@ -330,7 +421,7 @@ async fn main() -> anyhow::Result<()> {
     let web_dir = web_dir(&args);
     let index = web_dir.join("index.html");
     let static_files = ServeDir::new(&web_dir).not_found_service(ServeFile::new(&index));
-    let router = Router::new().route("/ws", get(ws_handler)).fallback_service(static_files).with_state(ctx);
+    let router = Router::new().route("/ws", get(ws_handler)).route("/api/csv", get(csv_handler)).fallback_service(static_files).with_state(ctx);
     let url = format!("http://{addr}/{}", url_token.as_ref().map(|t| format!("?token={t}")).unwrap_or_default());
     let listener = match tokio::net::TcpListener::bind(addr).await {
         Ok(l) => l,
@@ -361,17 +452,51 @@ async fn ws_handler(ws: WebSocketUpgrade, Query(q): Query<HashMap<String, String
     ws.on_upgrade(move |s| client(s, ctx))
 }
 
+/// Telemetria de um veículo em CSV: a gravação inteira, na reprodução, ou o
+/// histórico recente (30 min de relógio), ao vivo.
+async fn csv_handler(Query(q): Query<HashMap<String, String>>, State(ctx): State<Ctx>) -> Response {
+    if let Some(t) = &ctx.token {
+        if q.get("token") != Some(t) {
+            return (StatusCode::UNAUTHORIZED, "token inválido").into_response();
+        }
+    }
+    let Some(id) = q.get("vehicle").and_then(|v| v.parse::<u32>().ok()) else {
+        return (StatusCode::BAD_REQUEST, "falta ?vehicle=").into_response();
+    };
+    let (body, name) = {
+        let a = ctx.app.lock().unwrap();
+        match &a.replay {
+            Some(rp) => {
+                let dict: Value = serde_json::from_str::<Value>(&rp.hello()).map(|h| h["dictionary"].clone()).unwrap_or(Value::Null);
+                (rp.csv(id, &dict), rp.name.clone())
+            }
+            None => (snapshot::csv(&a, id), a.world.scenario.clone()),
+        }
+    };
+    match body {
+        Some(b) => (
+            [(header::CONTENT_TYPE, "text/csv; charset=utf-8".to_string()), (header::CONTENT_DISPOSITION, format!("attachment; filename=\"jaci-{}-{id}.csv\"", recording::clean_name(&name).replace(' ', "_")))],
+            b,
+        )
+            .into_response(),
+        None => (StatusCode::NOT_FOUND, "sem telemetria desse veículo").into_response(),
+    }
+}
+
 async fn client(socket: WebSocket, ctx: Ctx) {
     let (mut sink, mut stream) = socket.split();
-    let (hello, history) = {
+    let (hello, history, frame) = {
         let mut a = ctx.app.lock().unwrap();
-        (snapshot::hello(&mut a), snapshot::history(&a))
+        match a.replay.as_mut() {
+            // Na reprodução, o quadro atual vai junto: parada, ela não manda outro.
+            Some(rp) => (rp.hello(), rp.history(), Some(rp.current())),
+            None => (snapshot::hello(&mut a), snapshot::history(&a), None),
+        }
     };
-    if sink.send(Message::Text(hello.into())).await.is_err() {
-        return;
-    }
-    if sink.send(Message::Text(history.into())).await.is_err() {
-        return;
+    for m in [Some(hello), Some(history), frame].into_iter().flatten() {
+        if sink.send(Message::Text(m.into())).await.is_err() {
+            return;
+        }
     }
     let mut rx = ctx.tx.subscribe();
     let (reply_tx, mut reply_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
@@ -403,6 +528,35 @@ async fn client(socket: WebSocket, ctx: Ctx) {
     writer.abort();
 }
 
+/// Ações do Instrutor durante a reprodução: controlam a reprodução. Devolve a
+/// resposta e, se for o caso, uma mensagem para todas as interfaces.
+fn replay_sim(a: &mut App, msg: &Value, req: &Value) -> (Value, Option<String>) {
+    let action = msg.get("action").and_then(|x| x.as_str()).unwrap_or("");
+    let ok = |m: &str| json!({"type": "sim_result", "req": req, "ok": true, "message": m});
+    let Some(rp) = a.replay.as_mut() else { return (ok(""), None) };
+    match action {
+        "pause" => rp.control(Some(false), None),
+        "resume" => rp.control(Some(true), None),
+        "warp" => rp.control(None, msg.get("value").and_then(|x| x.as_f64())),
+        "replay_control" => {
+            rp.control(msg.get("playing").and_then(|x| x.as_bool()), msg.get("speed").and_then(|x| x.as_f64()));
+            if let Some(i) = msg.get("seek").and_then(|x| x.as_u64()) {
+                return (ok("ok"), Some(rp.seek(i as usize)));
+            }
+        }
+        "replay_stop" => {
+            a.replay = None;
+            a.dict_sig.clear();
+            a.sent_events = a.world.event_seq;
+            return (json!({"type": "reload", "req": req}), Some(json!({"type": "reload"}).to_string()));
+        }
+        "recordings" => return (json!({"type": "recordings", "req": req, "list": recording::list(&a.recordings_dir), "dir": a.recordings_dir.display().to_string()}), None),
+        "saves" | "ack" => return (json!({"type": "sim_result", "req": req, "ok": false, "error": "em reprodução"}), None),
+        _ => return (json!({"type": "sim_result", "req": req, "ok": false, "error": "em reprodução: saia dela primeiro"}), None),
+    }
+    (ok("ok"), None)
+}
+
 /// Liga ao KSP: acha a pasta, instala os scripts do kOS.
 fn connect_ksp(dir: Option<PathBuf>) -> anyhow::Result<ksp::KspLink> {
     let dir = dir.or_else(ksp::find_ksp).context("não achei o Kerbal Space Program; passe a pasta: --ksp <pasta>")?;
@@ -424,6 +578,29 @@ fn handle(ctx: &Ctx, msg: &Value) -> Option<Value> {
     let kind = msg.get("type")?.as_str()?;
     let req = msg.get("req").cloned().unwrap_or(Value::Null);
     let mut a = ctx.app.lock().unwrap();
+    // Na reprodução não há o que comandar; o traço previsto vem do estado gravado.
+    if let Some(rp) = a.replay.as_mut() {
+        match kind {
+            "command" => return Some(json!({"type": "command_result", "req": req, "ok": false, "error": "em reprodução: comandos desligados"})),
+            "plan" | "plan_apply" => return Some(json!({"type": kind, "req": req, "ok": false, "error": "em reprodução: comandos desligados"})),
+            "passes" => return Some(json!({"type": "passes", "req": req, "vehicle": vid(msg), "passes": []})),
+            "predict" => {
+                let id = vid(msg);
+                let span = msg.get("span").and_then(|x| x.as_f64()).unwrap_or(6_000.0).clamp(60.0, 3.0e8);
+                let step = msg.get("step").and_then(|x| x.as_f64()).unwrap_or(span / 400.0).clamp(span / 5_000.0, span).max(1.0);
+                let (central, pts) = rp.predict(id, span, step);
+                return Some(json!({"type": "predict", "req": req, "vehicle": id, "central": central, "points": pts}));
+            }
+            "sim" => {
+                let (reply, broadcast) = replay_sim(&mut a, msg, &req);
+                if let Some(b) = broadcast {
+                    let _ = ctx.tx.send(b.into());
+                }
+                return Some(reply);
+            }
+            _ => {}
+        }
+    }
     let out = match kind {
         "command" => {
             let id = vid(msg);
@@ -457,7 +634,14 @@ fn handle(ctx: &Ctx, msg: &Value) -> Option<Value> {
                 Err(e) => json!({"type": "command_result", "req": req, "ok": false, "error": e}),
             }
         }
-        "sim" => sim(&mut a, msg, &req),
+        "sim" => {
+            let out = sim(&mut a, msg, &req);
+            // Mundo novo (cenário, estado ou reprodução): todas as interfaces recomeçam.
+            if out["type"] == "reload" {
+                let _ = ctx.tx.send(Arc::from(json!({"type": "reload"}).to_string()));
+            }
+            out
+        }
         "plan" => {
             let id = vid(msg);
             if a.ksp.as_ref().is_some_and(|l| l.vessel(id).is_some()) {
@@ -569,6 +753,8 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
             let t = msg.get("start").and_then(|x| x.as_str()).and_then(parse_utc).unwrap_or_else(now_j2000);
             match scenarios::build(id, t, 2026) {
                 Some(nw) => {
+                    a.stop_recording();
+                    let w = &mut a.world;
                     *w = nw;
                     a.sent_events = a.world.event_seq;
                     a.dict_sig.clear();
@@ -601,6 +787,7 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
             let path = a.states_dir.join(format!("{name}.json"));
             match std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|s| serde_json::from_str::<World>(&s).map_err(|e| e.to_string())) {
                 Ok(nw) => {
+                    a.stop_recording();
                     a.world = nw;
                     a.sent_events = a.world.event_seq;
                     a.dict_sig.clear();
@@ -684,6 +871,28 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
             Some(Err(e)) => json!({"type": "sim_result", "req": req, "ok": false, "error": e.to_string()}),
             None => json!({"type": "sim_result", "req": req, "ok": false, "error": "KSP não ligado"}),
         },
+        "record_start" => match a.start_recording(msg.get("value").and_then(|x| x.as_str())) {
+            Ok(m) => json!({"type": "sim_result", "req": req, "ok": true, "message": m}),
+            Err(e) => json!({"type": "sim_result", "req": req, "ok": false, "error": e}),
+        },
+        "record_stop" => match a.stop_recording() {
+            Some(m) => json!({"type": "sim_result", "req": req, "ok": true, "message": m}),
+            None => json!({"type": "sim_result", "req": req, "ok": false, "error": "não há gravação em andamento"}),
+        },
+        "recordings" => json!({"type": "recordings", "req": req, "list": recording::list(&a.recordings_dir), "dir": a.recordings_dir.display().to_string()}),
+        "replay_start" => {
+            if a.recorder.is_some() {
+                return json!({"type": "sim_result", "req": req, "ok": false, "error": "pare a gravação antes de reproduzir"});
+            }
+            let name = msg.get("value").and_then(|x| x.as_str()).unwrap_or("");
+            match recording::Replay::load(&recording::path_of(&a.recordings_dir, name)) {
+                Ok(rp) => {
+                    a.replay = Some(rp);
+                    json!({"type": "reload", "req": req})
+                }
+                Err(e) => json!({"type": "sim_result", "req": req, "ok": false, "error": format!("{e:#}")}),
+            }
+        }
         "remove_debris" => {
             w.vehicles.retain(|v| !(v.kind == jaci_sim::vehicle::Kind::Debris && v.phase.is_final()));
             ok("detritos removidos")

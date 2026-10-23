@@ -135,6 +135,8 @@ export function CmdButton({
   title?: string
 }) {
   const def = useStore((s) => s.hello?.commands.find((c) => c.id === cmd))
+  // Na reprodução de uma gravação não há o que comandar.
+  const replay = useStore((s) => s.snap?.replay != null)
   const danger = hazardous ?? def?.hazardous ?? false
   const [armed, setArmed] = useState(false)
   useEffect(() => {
@@ -152,7 +154,7 @@ export function CmdButton({
     await sendCommand(vehicle, cmd, args, { armed: danger })
   }
   return (
-    <button className={`${className ?? ''} ${armed ? 'armed' : ''} ${danger && !armed ? 'danger' : ''}`} disabled={disabled || vehicle == null} onClick={click} title={title ?? tx(def?.description)}>
+    <button className={`${className ?? ''} ${armed ? 'armed' : ''} ${danger && !armed ? 'danger' : ''}`} disabled={disabled || replay || vehicle == null} onClick={click} title={replay ? t('Reprodução: comandos desligados') : (title ?? tx(def?.description))}>
       {armed ? t('CONFIRMAR') : children}
     </button>
   )

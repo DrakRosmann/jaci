@@ -64,6 +64,8 @@ export interface Hello {
   bodies: { id: string; name: string; radius: number; parent: string | null; soi: number | null }[]
   events: EventMsg[]
   dictionary: Record<string, TmDef[]>
+  /** Na reprodução: o estado, as marcas da linha do tempo e a hora de alguns quadros. */
+  replay?: ReplayInfo & { markers: ReplayMarker[]; times: [number, number][] }
 }
 
 export interface Engine {
@@ -344,6 +346,41 @@ export interface Snapshot {
   sun: [number, number, number]
   stations_live: { id: string; enabled: boolean }[]
   ksp: KspStatus | null
+  /** Gravação em andamento. */
+  recording?: RecordingStatus | null
+  /** Presente quando o servidor está reproduzindo uma gravação. */
+  replay?: ReplayInfo | null
+}
+
+export interface RecordingStatus {
+  name: string
+  frames: number
+  /** Tempo de simulação coberto (s). */
+  span: number
+  bytes: number
+}
+
+export interface ReplayInfo {
+  name: string
+  frames: number
+  index: number
+  playing: boolean
+  speed: number
+  t0: number
+  t1: number
+  t: number
+}
+
+/** Marca na linha do tempo: quadro, nível e texto do evento. */
+export type ReplayMarker = [number, Level, string]
+
+export interface RecordingEntry {
+  name: string
+  bytes: number
+  modified: string | null
+  created: string | null
+  mission: string | null
+  scenario: string | null
 }
 
 export interface PlanNode {

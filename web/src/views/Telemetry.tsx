@@ -117,13 +117,18 @@ export function Telemetry() {
           <Panel
             title={t('Gráfico')}
             right={
-              <select value={hours} onChange={(e) => setHours(Number(e.target.value))}>
-                {[0.1, 0.5, 1, 3, 12, 48, 1e6].map((h) => (
-                  <option key={h} value={h}>
-                    {h >= 1e6 ? t('tudo') : h < 1 ? `${h * 60} min` : `${h} h`}
-                  </option>
-                ))}
-              </select>
+              <span className="row">
+                <a className="button small" href={store.csvUrl(v.id)} download title={snap.replay ? t('Telemetria do veículo selecionado, a gravação inteira') : t('Telemetria dos últimos 30 min do veículo selecionado')}>
+                  CSV
+                </a>
+                <select value={hours} onChange={(e) => setHours(Number(e.target.value))}>
+                  {[0.1, 0.5, 1, 3, 12, 48, 1e6].map((h) => (
+                    <option key={h} value={h}>
+                      {h >= 1e6 ? t('tudo') : h < 1 ? `${h * 60} min` : `${h} h`}
+                    </option>
+                  ))}
+                </select>
+              </span>
             }
             flush
           >

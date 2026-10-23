@@ -13,8 +13,9 @@ mesmo `req` só para quem pediu.
 | `hello` | ao conectar | versão, cenários, catálogo, dicionário de comandos, falhas, estações, locais de lançamento, corpos, últimos eventos e o dicionário de telemetria de cada veículo |
 | `snapshot` | 5 vezes por segundo | instante (`t`, segundos desde J2000, e `utc`), aceleração, veículos (estado, telemetria `tm`, estágios, motores, queimas, guiamento, subsistemas), contagem, clima, alarmes, comandos recentes, eventos novos, corredor de segurança, posições dos corpos |
 | `dictionary` | quando um veículo muda de forma (separa estágio, troca tripulação) | `dictionary`: id do veículo → lista de pontos (`id`, `name`, `unit`, `group`, `yellow`, `red`) |
-| `command_result`, `plan`, `plan_applied`, `predict`, `passes`, `porkchop`, `saves`, `sim_result` | respostas | veja abaixo |
-| `reload` | depois de carregar cenário ou estado | a interface reconecta e recebe um `hello` novo |
+| `command_result`, `plan`, `plan_applied`, `predict`, `passes`, `porkchop`, `saves`, `recordings`, `sim_result` | respostas | veja abaixo |
+| `reload` | depois de carregar cenário ou estado, e ao entrar e sair da reprodução (para todas as interfaces) | a interface reconecta e recebe um `hello` novo |
+| `rewind` | na reprodução, ao pular para outro ponto | `events` e `dictionary` até ali e `history` (a telemetria, no formato de `history`): a interface recomeça eventos e gráficos |
 
 ### Da interface
 
@@ -34,8 +35,25 @@ executam depois do atraso da luz; os de solo (`ground`) executam na hora. Respos
 | `predict` | `vehicle`, `span` (s), `step` (s) | `predict`: pontos `[t, lat, lon, alt_km, x, y, z]` |
 | `passes` | `vehicle`, `span` (s) | `passes`: estação, AOS, LOS, elevação máxima |
 | `porkchop` | `from`, `to`, `start` (UTC), `span_days`, `tof_min`, `tof_max`, `n` | `porkchop`: datas, durações, C3 e v∞ de chegada, melhor ponto |
-| `sim` | `action`: `warp` (`value`), `pause`, `resume`, `warp_stop`, `scenario` (`value`, `start`), `save` (`value`), `saves`, `load` (`value`), `weather` (`surface_wind`, `wind_from`, `jet_wind`, `lightning_km`, `ceiling_m`, `rain`, `evolve`), `fault` (`vehicle`, `fault`, `arg`), `clear_faults`, `ack` (`value`: id do alarme, ou todos), `station` (`id`, `enabled`), `remove_debris`, `ksp_connect` (`value`: pasta do KSP, ou vazio para procurar), `ksp_patch` | `sim_result`, `saves` ou `reload` |
+| `sim` | `action`: `warp` (`value`), `pause`, `resume`, `warp_stop`, `scenario` (`value`, `start`), `save` (`value`), `saves`, `load` (`value`), `weather` (`surface_wind`, `wind_from`, `jet_wind`, `lightning_km`, `ceiling_m`, `rain`, `evolve`), `fault` (`vehicle`, `fault`, `arg`), `clear_faults`, `ack` (`value`: id do alarme, ou todos), `station` (`id`, `enabled`), `remove_debris`, `ksp_connect` (`value`: pasta do KSP, ou vazio para procurar), `ksp_patch`, `record_start` (`value`: nome, ou automático), `record_stop`, `recordings`, `replay_start` (`value`: nome), `replay_control` (`playing`, `speed`, `seek`: número do quadro), `replay_stop` | `sim_result`, `saves`, `recordings` ou `reload` |
 | `dictionary` | — | `dictionary` |
+
+### Gravação e reprodução
+
+Gravando, o instantâneo leva `recording` (`name`, `frames`, `span` em segundos de simulação,
+`bytes`). A gravação é um arquivo `<nome>.jaci.gz`: JSON Lines em gzip, com o cabeçalho
+(`{"type": "header", "format": 1, "name", "created", "hello"}`), os `dictionary` quando mudam e um
+`snapshot` por segundo de relógio, cada um com os eventos desde o anterior.
+
+Reproduzindo, a simulação fica parada e o servidor envia os quadros gravados como instantâneos,
+com `replay` (`name`, `frames`, `index`, `playing`, `speed`, `t0`, `t1`, `t`); o `hello` leva
+também `replay.markers` (`[quadro, nível, texto]` de cada evento) e `replay.times` (`[quadro, t]` de
+alguns quadros). `pause`, `resume` e `warp` controlam a reprodução; comandos e planos são
+recusados; `predict` parte do estado gravado; `passes` volta vazio.
+
+`GET /api/csv?vehicle=<id>` (com `&token=…` se o servidor exigir) devolve a telemetria do veículo em
+CSV: hora UTC, segundos desde J2000 e uma coluna por ponto (`id [unidade]`). Na reprodução, a
+gravação inteira; ao vivo, os últimos 30 min.
 
 Naves do KSP vêm no instantâneo como veículos `"kind": "ksp"`, com `central` (o nome do corpo em
 minúsculas), `central_radius` e um objeto `ksp` (situação, piloto automático, atitude, SAS, RCS,

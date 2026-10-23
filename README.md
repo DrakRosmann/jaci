@@ -111,7 +111,7 @@ os eventos, `l` troca a língua e `?` lista os atalhos (nenhum manda comando a v
   telemetria (contagem, ativação de satélite, reentrada, acoplamento, despressurização, bateria
   baixa, descarga de dados, injeção interplanetária, reimpulso).
 * **Instrutor (SIM):** cenários, aceleração do tempo (até 100 000×, volta a 1× num alarme), estados
-  salvos, clima e injeção de falhas: motor, vazamento de propelente, célula da bateria, painel solar
+  salvos, gravações da missão para o debriefing, clima e injeção de falhas: motor, vazamento de propelente, célula da bateria, painel solar
   travado ou degradado, roda de reação, girômetros, rastreador de estrelas, transmissor, aquecedor,
   vazamento na cabine, remoção de CO₂, paraquedas, célula a combustível, barco na área, falha de solo
   e tempestade.
@@ -126,6 +126,16 @@ também mudam.
 | Cápsula recém-inserida a 210 km, no plano da estação, com o traço previsto e o ponto de queda do 1º estágio | Subida da cápsula: pressão dinâmica achatada pela redução de potência, corte do 1º estágio e malha fechada |
 | ![Órbita](docs/img/orbita.png) | ![Interplanetário](docs/img/interplanetario.png) |
 | Órbita em 3D e as queimas do encontro com a estação | Porkchop da janela de Marte de 2026 |
+
+## Gravação e debriefing
+
+No console **Instrutor**, "Gravar" guarda a missão (um quadro por segundo: telemetria, eventos,
+alarmes e comandos) em `gravacoes/` ao lado dos estados salvos (`--recordings-dir` muda a pasta);
+`jaci --record` já começa gravando. "Reproduzir" para a simulação e mostra a gravação em todas as
+telas conectadas, com todos os consoles: a barra de reprodução tem tocar e pausar (também pelo
+espaço), velocidade, uma linha do tempo com as marcas dos alarmes, avisos e eventos (clique para
+pular até lá) e o botão CSV com a telemetria do veículo selecionado. Na reprodução os comandos
+ficam desligados. Ao vivo, o botão CSV do console de telemetria baixa os últimos 30 min.
 
 ## A física
 

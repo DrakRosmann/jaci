@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Panel, toast } from '../components/ui'
 import { t, tx } from '../lib/i18n'
+import { met } from '../lib/format'
 import { store, useStore } from '../lib/store'
+import type { RecordingEntry } from '../types'
 
 export function Instructor() {
   const hello = useStore((s) => s.hello)!
@@ -83,6 +85,7 @@ export function Instructor() {
           </tbody>
         </table>
       </Panel>
+      <Recordings />
       <Panel title={t('Injeção de falhas')}>
         <div className="form">
           <label>{t('Veículo')}</label>
@@ -167,4 +170,78 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       {children}
     </>
   )
+}
+
+/** Gravações da missão: gravar, listar e reproduzir para o debriefing. */
+function Recordings() {
+  const rec = useStore((s) => s.snap?.recording ?? null)
+  const replay = useStore((s) => s.snap?.replay ?? null)
+  const [name, setName] = useState('')
+  const [list, setList] = useState<RecordingEntry[]>([])
+  const [dir, setDir] = useState('')
+  const load = () =>
+    store
+      .sim('recordings')
+      .then((r: any) => {
+        setList(r.list ?? [])
+        setDir(r.dir ?? '')
+      })
+      .catch(() => {})
+  useEffect(() => {
+    load()
+  }, [rec?.name])
+  const result = (r: { ok?: boolean; error?: string; message?: string }) => toast(r.ok === false ? tx(r.error) : tx(r.message) || t('feito'), r.ok === false ? 'bad' : 'good')
+  return (
+    <Panel title={t('Gravações')} right={dir && <span className="small muted mono" title={dir}>{dir.split('/').slice(-2).join('/')}</span>}>
+      {rec ? (
+        <div className="row">
+          <span className="rec">
+            <span className="dot bad" /> {rec.name}
+          </span>
+          <span className="small muted">
+            {rec.frames} {t('quadros')} · {met(rec.span).replace('T+', '')} · {bytes(rec.bytes)}
+          </span>
+          <button onClick={() => store.sim('record_stop').then(result).then(load)}>{t('Parar a gravação')}</button>
+        </div>
+      ) : (
+        <div className="row">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('nome (automático se vazio)')} style={{ width: 190 }} disabled={!!replay} />
+          <button className="primary" disabled={!!replay} onClick={() => store.sim('record_start', { value: name || undefined }).then(result)}>
+            ● {t('Gravar')}
+          </button>
+        </div>
+      )}
+      <p className="small muted">{t('Grava um quadro por segundo: telemetria, eventos, alarmes e comandos. Na reprodução a simulação espera e todas as telas mostram a gravação.')}</p>
+      <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+        <table>
+          <tbody>
+            {list.map((g) => (
+              <tr key={g.name} className={replay?.name === g.name ? 'sel' : ''}>
+                <td>
+                  {g.name}
+                  <div className="small muted">
+                    {tx(g.mission ?? '')} · {g.created ?? g.modified} · {bytes(g.bytes)}
+                  </div>
+                </td>
+                <td>
+                  <button className="small" disabled={!!rec || replay?.name === g.name} onClick={() => store.sim('replay_start', { value: g.name }).then(result)}>
+                    ▶ {t('Reproduzir')}
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {list.length === 0 && (
+              <tr>
+                <td className="muted">{t('Nenhuma gravação ainda.')}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  )
+}
+
+function bytes(n: number): string {
+  return n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} kB`
 }

@@ -244,11 +244,16 @@ fn vehicle(w: &World, v: &Vehicle) -> Value {
 }
 
 pub fn snapshot(a: &mut App) -> String {
+    let v = snapshot_value(a, a.sent_events);
+    a.sent_events = a.world.event_seq;
+    v.to_string()
+}
+
+/// O instantâneo, com os eventos depois de `since` (contador do mundo).
+pub fn snapshot_value(a: &App, since: u64) -> Value {
     let w = &a.world;
-    let new = (w.event_seq - a.sent_events).min(w.events.len() as u64) as usize;
+    let new = (w.event_seq.saturating_sub(since)).min(w.events.len() as u64) as usize;
     let events: Vec<Value> = w.events[w.events.len() - new..].iter().map(event).collect();
-    a.sent_events = w.event_seq;
-    let w = &a.world;
     let lc = &w.launch;
     let launch = json!({
         "vehicle": lc.vehicle,
@@ -324,8 +329,8 @@ pub fn snapshot(a: &mut App) -> String {
         "sun": v3(sun),
         "stations_live": w.stations.iter().map(|s| json!({"id": s.id, "enabled": s.enabled})).collect::<Vec<_>>(),
         "ksp": ksp,
+        "recording": a.recorder.as_ref().map(|r| r.status()),
     })
-    .to_string()
 }
 
 /// Histórico de telemetria de um veículo: os nomes uma vez, os valores em f32.
@@ -366,6 +371,12 @@ pub fn record_history(a: &mut App) {
             h.rows.pop_front();
         }
     }
+}
+
+/// O histórico recente de um veículo em CSV.
+pub fn csv(a: &App, id: u32) -> Option<String> {
+    let h = a.history.get(&id)?;
+    Some(crate::recording::to_csv(&h.keys, h.rows.iter().map(|(t, r)| (*t, r.as_slice())), &dictionary_map(a), id))
 }
 
 /// O histórico em colunas: por veículo, os instantes e cada ponto.

@@ -2,6 +2,7 @@ import { Component, Suspense, lazy, useEffect, useState, type ComponentType, typ
 import { Toasts } from './components/ui'
 import { EventLog } from './components/EventLog'
 import { TopBar } from './components/TopBar'
+import { ReplayBar } from './components/ReplayBar'
 import { Shortcuts } from './components/Shortcuts'
 import { t } from './lib/i18n'
 import { utc } from './lib/format'
@@ -62,6 +63,7 @@ export default function App() {
   return (
     <div className="app">
       <TopBar onHelp={() => setHelp(true)} />
+      <ReplayBar />
       <div className={`body ${collapsed ? 'collapsed' : ''}`}>
         <nav className="consoles" aria-label={t('Consoles')}>
           <button className="collapse" onClick={() => store.setUi({ navCollapsed: !collapsed })} title={collapsed ? t('Mostrar os nomes dos consoles') : t('Recolher o menu')} aria-label={collapsed ? t('Mostrar os nomes dos consoles') : t('Recolher o menu')}>

@@ -45,6 +45,11 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
           <b>{lc.clock}</b>
         </div>
       )}
+      {snap?.recording && (
+        <span className="rec" title={`${t('Gravando')}: ${snap.recording.name}`} role="status">
+          <span className="dot bad" /> REC {met(snap.recording.span).replace('T+', '')}
+        </span>
+      )}
       <div className="spacer" />
       <select aria-label={t('Veículo selecionado')} value={selected ?? ''} onChange={(e) => store.setUi({ selected: Number(e.target.value) })} title={t('Veículo selecionado')}>
         {vehicles.map((v) => (

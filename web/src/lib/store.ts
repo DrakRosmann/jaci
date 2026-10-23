@@ -145,13 +145,14 @@ class Store {
         break
       case 'history':
         // Telemetria de antes de conectar, para os gráficos.
-        for (const [vid, h] of Object.entries(d.vehicles as Record<string, { t: number[]; points: Record<string, (number | null)[]> }>)) {
-          h.t.forEach((t, i) => {
-            const tm: Record<string, number | null> = {}
-            for (const [k, col] of Object.entries(h.points)) tm[k] = col[i]
-            this.history.push(Number(vid), t, tm)
-          })
-        }
+        this.loadHistory(d.vehicles)
+        break
+      case 'rewind':
+        // Reprodução: pulou para outro ponto. Eventos e gráficos recomeçam dali.
+        this.events = d.events
+        this.dictionary = d.dictionary
+        this.history.clear()
+        this.loadHistory(d.history ?? {})
         break
       case 'reload':
         // Cenário ou estado novo: recomeça do zero.
@@ -181,6 +182,22 @@ class Store {
       this.pending.delete(d.req)
     }
     this.emit()
+  }
+
+  private loadHistory(vehicles: Record<string, { t: number[]; points: Record<string, (number | null)[]> }>) {
+    for (const [vid, h] of Object.entries(vehicles)) {
+      h.t.forEach((t, i) => {
+        const tm: Record<string, number | null> = {}
+        for (const [k, col] of Object.entries(h.points)) tm[k] = col[i]
+        this.history.push(Number(vid), t, tm)
+      })
+    }
+  }
+
+  /** Endereço do CSV da telemetria de um veículo (com a senha, se houver). */
+  csvUrl(vehicle: number): string {
+    const token = new URLSearchParams(location.search).get('token')
+    return `/api/csv?vehicle=${vehicle}${token ? `&token=${encodeURIComponent(token)}` : ''}`
   }
 
   send(msg: object) {

@@ -9,6 +9,7 @@ description = "Servidor do Jaci: simulação, WebSocket para a interface e enlac
 anyhow = "1"
 axum = { version = "0.8", features = ["ws"] }
 clap = { version = "4", features = ["derive", "env"] }
+flate2 = "1"
 futures-util = "0.3"
 getrandom = "0.3"
 jaci-sim = { path = "../sim" }

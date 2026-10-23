@@ -48,6 +48,7 @@ function connect(p) {
         c.snap = d
         c.events.push(...d.events)
       }
+      if (d.type === 'rewind') c.rewind = d
       if (d.req != null && c.waiters.has(d.req)) {
         c.waiters.get(d.req)(d)
         c.waiters.delete(d.req)
@@ -232,6 +233,66 @@ const cases = [
         assert(p.passes.length > 3, 'poucas passagens')
       } finally {
         s.close()
+      }
+    },
+  ],
+  [
+    'gravação: gravar, reproduzir, pular e CSV',
+    async () => {
+      const recs = mkdtempSync(join(tmpdir(), 'jaci-gravacoes-'))
+      const s = await server('sondagem', ['--record', '--recordings-dir', recs])
+      try {
+        const c = s.ws
+        const snap = await until(c, 'gravando', (x) => x.recording?.frames >= 1)
+        const id = snap.launch.vehicle
+        const r = await c.request({ type: 'command', vehicle: id, cmd: { id: 'count_start', args: {} } })
+        assert(r.ok, `contagem: ${r.error}`)
+        await c.request({ type: 'sim', action: 'warp', value: 100 })
+        await until(c, 'quadros gravados', (x) => x.recording?.frames >= 5, 20000)
+        const stop = await c.request({ type: 'sim', action: 'record_stop' })
+        assert(stop.ok, `parar: ${stop.error}`)
+        const list = await c.request({ type: 'sim', action: 'recordings' })
+        assert(list.list.length === 1, `gravações: ${JSON.stringify(list.list)}`)
+        const name = list.list[0].name
+        const rp = await c.request({ type: 'sim', action: 'replay_start', value: name })
+        assert(rp.type === 'reload', `reproduzir: ${rp.error}`)
+        // Quem conecta agora vê a gravação, desde o começo.
+        const c2 = await connect(s.port)
+        try {
+          assert(c2.hello.replay?.frames >= 5, `quadros: ${c2.hello.replay?.frames}`)
+          assert(c2.hello.replay.markers.length > 0, 'sem marcas na linha do tempo')
+          // Parada no começo, a reprodução não manda quadros: o atual vem ao conectar.
+          await until(c2, 'quadro da reprodução', (x) => x.replay?.index === 0, 3000)
+          const c4 = await connect(s.port)
+          await until(c4, 'quadro ao conectar', (x) => x.replay?.index === 0, 3000)
+          c4.close()
+          const cmd = await c2.request({ type: 'command', vehicle: id, cmd: { id: 'count_hold', args: {} } })
+          assert(!cmd.ok, 'comando aceito na reprodução')
+          await c2.request({ type: 'sim', action: 'replay_control', playing: true, speed: 30 })
+          const end = await until(c2, 'fim da reprodução', (x) => x.replay && !x.replay.playing && x.replay.index === x.replay.frames - 1, 10000)
+          assert(end.paused, 'reprodução no fim deveria estar parada')
+          assert(c2.events.some((e) => /contagem/i.test(e.text)), 'eventos da gravação não chegaram')
+          await c2.request({ type: 'sim', action: 'replay_control', seek: 1 })
+          for (let i = 0; i < 30 && !c2.rewind; i++) await sleep(100)
+          assert(c2.rewind, 'sem rewind ao pular')
+          await until(c2, 'quadro 1', (x) => x.replay?.index === 1)
+          const pr = await c2.request({ type: 'predict', vehicle: id, span: 600 })
+          assert(Array.isArray(pr.points), 'predict na reprodução')
+          const csv = await fetch(`http://127.0.0.1:${s.port}/api/csv?vehicle=${id}`)
+          const text = await csv.text()
+          assert(csv.status === 200 && text.startsWith('utc,t_j2000_s,'), `CSV: ${csv.status} ${text.slice(0, 80)}`)
+          assert(text.trim().split('\n').length >= 6, 'CSV curto')
+          const out = await c2.request({ type: 'sim', action: 'replay_stop' })
+          assert(out.type === 'reload', 'sair da reprodução')
+        } finally {
+          c2.close()
+        }
+        const c3 = await connect(s.port)
+        assert(!c3.hello.replay, 'ainda em reprodução')
+        c3.close()
+      } finally {
+        s.close()
+        rmSync(recs, { recursive: true, force: true })
       }
     },
   ],
