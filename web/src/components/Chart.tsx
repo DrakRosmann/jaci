@@ -1,6 +1,7 @@
 // Gráfico de linhas em canvas: séries no tempo, escala automática.
 
 import { useEffect, useRef, useState } from 'react'
+import { chartColors } from '../lib/theme'
 
 export interface Series {
   label: string
@@ -72,6 +73,7 @@ export function Chart({ series, height = 180, t0, unit, yMin, yMax }: { series: 
   const ref = useCanvas(
     (ctx, w, h) => {
       ctx.clearRect(0, 0, w, h)
+      const C = chartColors()
       const pad = { l: 52, r: 10, t: 8, b: 22 }
       layout.current = { l: pad.l, r: pad.r }
       let tmin = Infinity
@@ -90,7 +92,7 @@ export function Chart({ series, height = 180, t0, unit, yMin, yMax }: { series: 
       }
       ctx.font = '11px ui-monospace, monospace'
       if (!isFinite(tmin)) {
-        ctx.fillStyle = '#8494b3'
+        ctx.fillStyle = C.muted
         ctx.fillText('sem dados', w / 2 - 25, h / 2)
         return
       }
@@ -107,8 +109,8 @@ export function Chart({ series, height = 180, t0, unit, yMin, yMax }: { series: 
       const X = (t: number) => pad.l + ((t - tmin) / (tmax - tmin)) * (w - pad.l - pad.r)
       const Y = (v: number) => pad.t + (1 - (v - vmin) / (vmax - vmin)) * (h - pad.t - pad.b)
       // Grade.
-      ctx.strokeStyle = '#1a2540'
-      ctx.fillStyle = '#8494b3'
+      ctx.strokeStyle = C.grid
+      ctx.fillStyle = C.muted
       ctx.lineWidth = 1
       const ys = niceStep(vmax - vmin, 5)
       for (let v = Math.ceil(vmin / ys) * ys; v <= vmax; v += ys) {
@@ -165,7 +167,7 @@ export function Chart({ series, height = 180, t0, unit, yMin, yMax }: { series: 
       for (const s of series) {
         ctx.fillStyle = s.color
         ctx.fillRect(lx, pad.t + 4, 10, 3)
-        ctx.fillStyle = '#d9e2f2'
+        ctx.fillStyle = C.text
         ctx.fillText(s.label, lx + 14, pad.t + 9)
         lx += ctx.measureText(s.label).width + 30
       }
@@ -173,7 +175,7 @@ export function Chart({ series, height = 180, t0, unit, yMin, yMax }: { series: 
       if (hover != null) {
         const th = tmin + hover * (tmax - tmin)
         const x = Math.round(X(th)) + 0.5
-        ctx.strokeStyle = '#8494b3'
+        ctx.strokeStyle = C.muted
         ctx.setLineDash([3, 3])
         ctx.beginPath()
         ctx.moveTo(x, pad.t)
@@ -182,7 +184,7 @@ export function Chart({ series, height = 180, t0, unit, yMin, yMax }: { series: 
         ctx.setLineDash([])
         const rel = th - base
         const lines = [`${rel >= 0 ? '+' : ''}${rel.toFixed(Math.abs(rel) < 100 ? 1 : 0)} s`]
-        const colors = ['#d9e2f2']
+        const colors = [C.text]
         for (const s of series) {
           const i = nearest(s.t, th)
           if (i < 0) continue
@@ -200,8 +202,8 @@ export function Chart({ series, height = 180, t0, unit, yMin, yMax }: { series: 
         const bh = lines.length * 14 + 6
         const bx = x + 8 + bw > w - pad.r ? x - 8 - bw : x + 8
         const by = pad.t + 16
-        ctx.fillStyle = 'rgba(10,17,34,0.92)'
-        ctx.strokeStyle = '#22304d'
+        ctx.fillStyle = C.panel
+        ctx.strokeStyle = C.line
         ctx.fillRect(bx, by, bw, bh)
         ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1)
         lines.forEach((l, i) => {

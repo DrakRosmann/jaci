@@ -68,7 +68,7 @@ export function Procedures() {
         {list.map((p) => {
           const r = runs[`${p.id}:${v.id}`]
           return (
-            <div key={p.id} onClick={() => setSel(p.id)} style={{ padding: '8px 12px', cursor: 'pointer', background: p.id === proc.id ? '#16274a' : undefined, borderBottom: '1px solid #1a2540' }}>
+            <div key={p.id} onClick={() => setSel(p.id)} style={{ padding: '8px 12px', cursor: 'pointer', background: p.id === proc.id ? 'var(--sel)' : undefined, borderBottom: '1px solid var(--line-2)' }}>
               <div>
                 {t(p.name)}{' '}
                 {r && <span className="small muted">({r.step >= p.steps.length ? t('concluído') : `${r.step}/${p.steps.length}`})</span>}

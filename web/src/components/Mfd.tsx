@@ -1,100 +1,215 @@
 // MFD (tela multifunção) do controle manual: uma moldura com teclas nas
 // bordas, como as dos painéis reais, e páginas — ADI (horizonte artificial),
-// ORB (mapa orbital), RES (recursos), 3D (a nave) e MAPA (traço no solo).
+// ORB (mapa orbital), MNV (manobras), ENG (motores), RES (recursos), DSC
+// (descida), ENT (reentrada), TGT (alvo), SIS, COM, TLM, ALM, 3D e MAPA. As
+// teclas de cima são as páginas preferidas de cada tela; o MENU tem todas e
+// escolhe quais ficam na moldura.
 
-import { Suspense, lazy, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useCanvas } from './Chart'
 import { MapWidget } from './Widgets'
-import { bodyAxes, cross, dot, elements, eulerLocal, markers, unit, type Q, type V3 } from '../lib/attitude'
+import { CmdButton } from './ui'
+import { Alarms, Comms, Descent, Engines, Entry, Maneuver, Systems, Target, TlmPage } from './MfdPages'
+import { cross, dot, elements, eulerLocal, markers, unit, type Q, type V3 } from '../lib/attitude'
 import { t, tx } from '../lib/i18n'
 import { duration, num } from '../lib/format'
-import { useStore } from '../lib/store'
+import { MU, nextNode, nodeDirection, offsets, palette, pickTarget, relative, targetCandidates } from '../lib/mfd'
+import { MAX_KEYS, PAGES, setMfdPrefs, setPilotPrefs, usePilotPrefs, type MfdPage } from '../lib/pilot'
+import { store, useStore } from '../lib/store'
 import type { Vehicle } from '../types'
 
 const Vehicle3D = lazy(() => import('./Vehicle3D').then((m) => ({ default: m.Vehicle3D })))
 
-export type MfdPage = 'adi' | 'orb' | 'res' | '3d' | 'map'
+const label = (p: MfdPage) => t(PAGES.find((x) => x[0] === p)?.[1] ?? p)
 
-const PAGES: [MfdPage, string][] = [
-  ['adi', 'ADI'],
-  ['orb', 'ORB'],
-  ['res', 'RES'],
-  ['3d', '3D'],
-  ['map', 'MAPA'],
-]
-
-const C = {
-  sky: '#1f5fa8',
-  ground: '#7a4a22',
-  line: '#e8f0ff',
-  green: '#4cff8a',
-  amber: '#ffc23d',
-  cyan: '#4cc3ff',
-  magenta: '#e879f9',
-  red: '#ff4d5e',
-  dim: '#7f8fae',
-}
-
-export function Mfd({ v, initial = 'adi', height = 420 }: { v: Vehicle | undefined; initial?: MfdPage; height?: number }) {
-  const [page, setPage] = useState<MfdPage>(initial)
+export function Mfd({ v, index, height = 420 }: { v: Vehicle | undefined; index: number; height?: number }) {
+  const prefs = usePilotPrefs()
+  const mine = prefs.mfds[index]
+  const page = mine.page
+  const [menu, setMenu] = useState(false)
   const [orbZoom, setOrbZoom] = useState(1)
-  const bodyH = height - 64
+  const [node, setNode] = useState(0)
+  const [editTlm, setEditTlm] = useState(false)
+  const vehicles = useStore((s) => s.snap?.vehicles ?? [])
+  // A altura da tela é a que sobra entre as teclas (medida: as teclas podem quebrar linha).
+  const screen = useRef<HTMLDivElement>(null)
+  const [inner, setInner] = useState(height - 90)
+  useEffect(() => {
+    const el = screen.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setInner(Math.max(60, el.clientHeight)))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const go = (p: MfdPage) => {
+    setMfdPrefs(index, { page: p })
+    setMenu(false)
+  }
+  const pin = (p: MfdPage) => {
+    const has = mine.keys.includes(p)
+    if (!has && mine.keys.length >= MAX_KEYS) return
+    setMfdPrefs(index, { keys: has ? mine.keys.filter((k) => k !== p) : PAGES.map(([id]) => id).filter((id) => id === p || mine.keys.includes(id)) })
+  }
+  const nodes = (v?.nodes ?? []).filter((n) => !n.done).sort((a, b) => a.t - b.t)
+  const selNode = nodes[Math.min(node, nodes.length - 1)]
+  const tgt = v ? pickTarget(v, vehicles) : undefined
+  const cycleTarget = (dir: number) => {
+    if (!v) return
+    const c = targetCandidates(v, vehicles)
+    if (!c.length) return
+    const i = c.findIndex((o) => o.id === tgt?.id)
+    setPilotPrefs({ target: c[(i + dir + c.length) % c.length].id })
+  }
+  let bottom: ReactNode = (
+    <span className="mfd-title">
+      {v?.name ?? '—'} · {menu ? 'MENU' : label(page)}
+    </span>
+  )
+  if (v && !menu) {
+    if (page === 'orb')
+      bottom = (
+        <>
+          <button onClick={() => setOrbZoom(orbZoom / 1.5)}>{t('ZOOM −')}</button>
+          <button onClick={() => setOrbZoom(1)}>{t('AJUSTAR')}</button>
+          <button onClick={() => setOrbZoom(orbZoom * 1.5)}>{t('ZOOM +')}</button>
+        </>
+      )
+    else if (page === 'mnv' && nodes.length > 0)
+      bottom = (
+        <>
+          <button onClick={() => setNode(Math.max(0, node - 1))} disabled={node === 0}>
+            ◀
+          </button>
+          <span className="mfd-title">
+            {Math.min(node, nodes.length - 1) + 1}/{nodes.length}
+          </span>
+          <button onClick={() => setNode(Math.min(nodes.length - 1, node + 1))} disabled={node >= nodes.length - 1}>
+            ▶
+          </button>
+          {selNode && (
+            <CmdButton vehicle={v.id} cmd="burn_delete" args={{ node: selNode.id }}>
+              {t('APAGAR')}
+            </CmdButton>
+          )}
+        </>
+      )
+    else if (page === 'tgt')
+      bottom = (
+        <>
+          <button onClick={() => cycleTarget(-1)}>◀</button>
+          <span className="mfd-title">{t('ALVO')}</span>
+          <button onClick={() => cycleTarget(1)}>▶</button>
+          {tgt && v.systems && (
+            <CmdButton vehicle={v.id} cmd="att_mode" args={{ mode: 'target', target: tgt.id }} className={v.systems.adcs.mode === 'target' ? 'on' : ''}>
+              {t('APONTAR')}
+            </CmdButton>
+          )}
+        </>
+      )
+    else if (page === 'com' && v.systems)
+      bottom = (
+        <>
+          <CmdButton vehicle={v.id} cmd="tx" args={{ on: v.systems.comms.tx_on ? 'off' : 'on' }} className={v.systems.comms.tx_on ? 'on' : ''}>
+            TX
+          </CmdButton>
+          <CmdButton vehicle={v.id} cmd="dump" className={v.systems.comms.dumping ? 'on' : ''}>
+            {t('DESCARREGAR')}
+          </CmdButton>
+          <CmdButton vehicle={v.id} cmd="rate" args={{}} className={v.systems.comms.auto_rate ? 'on' : ''} title={t('Taxa de dados automática')}>
+            {t('TAXA AUTO')}
+          </CmdButton>
+        </>
+      )
+    else if (page === 'alm')
+      bottom = <button onClick={() => store.sim('ack')}>{t('RECONHECER TODOS')}</button>
+    else if (page === 'tlm')
+      bottom = (
+        <button className={editTlm ? 'on' : ''} onClick={() => setEditTlm(!editTlm)}>
+          {editTlm ? t('PRONTO') : t('EDITAR')}
+        </button>
+      )
+  }
   return (
-    <div className="mfd" style={{ height }}>
+    <div className={`mfd pal-${prefs.palette}`} style={{ height }}>
       <div className="mfd-keys top">
-        {PAGES.map(([p, label]) => (
-          <button key={p} className={page === p ? 'on' : ''} onClick={() => setPage(p)} aria-pressed={page === p}>
-            {label}
+        {mine.keys.map((p) => (
+          <button key={p} className={!menu && page === p ? 'on' : ''} onClick={() => go(p)} aria-pressed={!menu && page === p} title={t(PAGES.find((x) => x[0] === p)?.[2] ?? '')}>
+            {label(p)}
           </button>
         ))}
+        <button className={menu ? 'on' : ''} onClick={() => setMenu(!menu)} aria-pressed={menu} title={t('Todas as páginas')}>
+          MENU
+        </button>
       </div>
-      <div className="mfd-screen" style={{ height: bodyH }}>
+      <div className="mfd-screen" ref={screen}>
         {!v ? (
           <div className="mfd-msg">{t('SEM VEÍCULO')}</div>
+        ) : menu ? (
+          <div className="mfd-menu">
+            {PAGES.map(([p, key, desc]) => (
+              <div key={p} className={`mfd-menu-item ${page === p ? 'on' : ''}`}>
+                <button className="go" onClick={() => go(p)}>
+                  <b>{t(key)}</b> {t(desc)}
+                </button>
+                <button
+                  className={`pin ${mine.keys.includes(p) ? 'on' : ''}`}
+                  onClick={() => pin(p)}
+                  disabled={!mine.keys.includes(p) && mine.keys.length >= MAX_KEYS}
+                  title={mine.keys.includes(p) ? t('Tirar da moldura') : t('Pôr na moldura')}
+                  aria-pressed={mine.keys.includes(p)}
+                >
+                  ★
+                </button>
+              </div>
+            ))}
+            <div className="mfd-menu-hint">{t('★ põe a página nas teclas de cima (até {n}).', { n: MAX_KEYS })}</div>
+          </div>
         ) : page === 'adi' ? (
-          <Adi v={v} height={bodyH} />
+          <Adi v={v} height={inner} />
         ) : page === 'orb' ? (
-          <OrbitPage v={v} height={bodyH} zoom={orbZoom} />
+          <OrbitPage v={v} height={inner} zoom={orbZoom} />
         ) : page === 'res' ? (
           <Resources v={v} />
+        ) : page === 'eng' ? (
+          <Engines v={v} />
+        ) : page === 'mnv' ? (
+          <Maneuver v={v} node={selNode} height={inner} />
+        ) : page === 'dsc' ? (
+          <Descent v={v} height={inner} />
+        ) : page === 'ent' ? (
+          <Entry v={v} />
+        ) : page === 'tgt' ? (
+          <Target v={v} target={tgt} height={inner} />
+        ) : page === 'sys' ? (
+          <Systems v={v} />
+        ) : page === 'com' ? (
+          <Comms v={v} />
+        ) : page === 'tlm' ? (
+          <TlmPage v={v} edit={editTlm} />
+        ) : page === 'alm' ? (
+          <Alarms v={v} />
         ) : page === '3d' ? (
           <Suspense fallback={<div className="mfd-msg">…</div>}>
-            <Vehicle3D v={v} height={bodyH} />
+            <Vehicle3D v={v} height={inner} />
           </Suspense>
         ) : (
-          <MapWidget height={bodyH} />
+          <MapWidget height={inner} />
         )}
       </div>
-      <div className="mfd-keys bottom">
-        {page === 'orb' ? (
-          <>
-            <button onClick={() => setOrbZoom(orbZoom / 1.5)}>{t('ZOOM −')}</button>
-            <button onClick={() => setOrbZoom(1)}>{t('AJUSTAR')}</button>
-            <button onClick={() => setOrbZoom(orbZoom * 1.5)}>{t('ZOOM +')}</button>
-          </>
-        ) : (
-          <span className="mfd-title">
-            {v?.name ?? '—'} · {PAGES.find((p) => p[0] === page)?.[1]}
-          </span>
-        )}
-      </div>
+      <div className="mfd-keys bottom">{bottom}</div>
     </div>
   )
-}
-
-/** Ângulos (graus) de uma direção em relação à frente da nave: para a direita e para cima na tela. */
-function offsets(d: V3, q: Q): { dx: number; dy: number; front: boolean } {
-  const { fwd, right, down } = bodyAxes(q)
-  const f = dot(d, fwd)
-  return { dx: (Math.atan2(dot(d, right), f) * 180) / Math.PI, dy: (Math.atan2(-dot(d, down), f) * 180) / Math.PI, front: f > 0 }
 }
 
 /** Horizonte artificial: céu e chão no referencial local, escada de arfagem, arco de rolamento, fita de rumo e marcadores. */
 function Adi({ v, height }: { v: Vehicle; height: number }) {
   const prev = useRef<{ t: number; e: { pitch: number; heading: number; roll: number } } | null>(null)
   const snapT = useStore((s) => s.snap?.t ?? 0)
+  const vehicles = useStore((s) => s.snap?.vehicles)
+  const prefs = usePilotPrefs()
   const ref = useCanvas(
     (ctx, w, h) => {
+      const C = palette()
       ctx.fillStyle = '#000'
       ctx.fillRect(0, 0, w, h)
       if (!v.q || !v.r || !v.v) {
@@ -115,8 +230,8 @@ function Adi({ v, height }: { v: Vehicle; height: number }) {
       }
       prev.current = { t: snapT, e }
       const cx = w / 2
-      const cy = h / 2 - 10
-      const R = Math.min(w, h) * 0.38
+      const cy = h / 2 - 16
+      const R = Math.min(w, h - 40) * 0.38
       const ppd = R / 35 // pixels por grau
       // Esfera: céu, chão e escada, girados pelo rolamento.
       ctx.save()
@@ -154,21 +269,29 @@ function Adi({ v, height }: { v: Vehicle; height: number }) {
         }
       }
       ctx.restore()
-      // Marcadores de órbita (prógrado, normal, radial), onde estiverem.
+      // Marcadores de órbita (prógrado, normal, radial), da próxima queima e do alvo, onde estiverem.
       const mk = markers(r, v.v as V3)
-      const sym: [string, string, string][] = [
-        ['prograde', '⊕', C.green],
-        ['retrograde', '⊗', C.green],
-        ['normal', '▲', C.magenta],
-        ['antinormal', '▼', C.magenta],
-        ['radial_out', '◇', C.cyan],
-        ['radial_in', '◆', C.cyan],
-      ]
+      const sym: [V3, string, string][] = []
+      if (prefs.adiMarkers)
+        sym.push(
+          [mk.prograde, '⊕', C.green],
+          [mk.retrograde, '⊗', C.green],
+          [mk.normal, '▲', C.magenta],
+          [mk.antinormal, '▼', C.magenta],
+          [mk.radial_out, '◇', C.cyan],
+          [mk.radial_in, '◆', C.cyan],
+        )
+      const nn = nextNode(v)
+      const nd = prefs.adiNode && nn ? nodeDirection(v, nn) : null
+      if (nd) sym.push([nd, '✚', C.cyan])
+      const tg = prefs.adiTarget && vehicles ? pickTarget(v, vehicles) : undefined
+      const rel = tg ? relative(v, tg) : null
+      if (rel) sym.push([rel.los, '◎', C.amber])
       ctx.font = 'bold 18px ui-monospace, monospace'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      for (const [k, s, color] of sym) {
-        const o = offsets(mk[k], q)
+      for (const [d, s, color] of sym) {
+        const o = offsets(d, q)
         if (!o.front || Math.hypot(o.dx, o.dy) > 34) continue
         ctx.fillStyle = color
         ctx.fillText(s, cx + o.dx * ppd, cy - o.dy * ppd)
@@ -255,9 +378,9 @@ function Adi({ v, height }: { v: Vehicle; height: number }) {
       ctx.textAlign = 'left'
       ctx.fillStyle = C.dim
       ctx.font = '10px ui-monospace, monospace'
-      ctx.fillText('⊕ PRO  ⊗ RET  ▲ NML  ◇ RAD', 10, h - 8)
+      ctx.fillText(`${prefs.adiMarkers ? '⊕ PRO  ⊗ RET  ▲ NML  ◇ RAD  ' : ''}${nd ? `✚ ${t('MNV')} ${num(offsets(nd, q).angle, 1)}°  ` : ''}${rel ? `◎ ${tg!.name}` : ''}`, 10, h - 8)
     },
-    [v, height],
+    [v, height, prefs, vehicles],
   )
   return (
     <div className="canvas-wrap" style={{ height }}>
@@ -270,8 +393,10 @@ function Adi({ v, height }: { v: Vehicle; height: number }) {
 function OrbitPage({ v, height, zoom }: { v: Vehicle; height: number; zoom: number }) {
   const bodies = useStore((s) => s.hello?.bodies)
   const others = useStore((s) => s.snap?.vehicles)
+  const pal = usePilotPrefs().palette
   const ref = useCanvas(
     (ctx, w, h) => {
+      const C = palette()
       ctx.fillStyle = '#000'
       ctx.fillRect(0, 0, w, h)
       const body = bodies?.find((b) => b.id === v.central)
@@ -300,7 +425,7 @@ function OrbitPage({ v, height, zoom }: { v: Vehicle; height: number; zoom: numb
       const cy = h / 2
       const P = (x: number, y: number): [number, number] => [cx + x * k, cy - y * k]
       // Grade de anéis.
-      ctx.strokeStyle = '#13213b'
+      ctx.strokeStyle = C.grid
       for (let rr = R; rr < extent * 2; rr *= 2) {
         ctx.beginPath()
         ctx.arc(cx, cy, rr * k, 0, Math.PI * 2)
@@ -390,7 +515,7 @@ function OrbitPage({ v, height, zoom }: { v: Vehicle; height: number; zoom: numb
       ctx.fillText(tx(v.central_name ?? v.central).toUpperCase(), w - 10, 18)
       ctx.textAlign = 'left'
     },
-    [v, zoom, bodies, others, height],
+    [v, zoom, bodies, others, height, pal],
   )
   return (
     <div className="canvas-wrap" style={{ height }}>
@@ -400,20 +525,6 @@ function OrbitPage({ v, height, zoom }: { v: Vehicle; height: number; zoom: numb
 }
 
 const norm2 = (a: V3) => Math.hypot(a[0], a[1], a[2])
-
-/** μ dos corpos (m³/s²). */
-const MU: Record<string, number> = {
-  earth: 3.986004418e14,
-  moon: 4.9048695e12,
-  mars: 4.282837e13,
-  venus: 3.24859e14,
-  mercury: 2.2032e13,
-  jupiter: 1.26686534e17,
-  saturn: 3.7931187e16,
-  uranus: 5.793939e15,
-  neptune: 6.836529e15,
-  sun: 1.32712440018e20,
-}
 
 /** Recursos da nave em barras: propelente por estágio, RCS, bateria, ar e água, gravador, escudo e Δv. */
 function Resources({ v }: { v: Vehicle }) {

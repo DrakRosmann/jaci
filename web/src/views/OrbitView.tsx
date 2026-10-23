@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { KspAttitude, KspManeuvers } from './Ksp'
 import { CmdButton, Empty, Panel, Tm, sendCommand, toast } from '../components/ui'
 import { t, tx } from '../lib/i18n'
@@ -130,7 +130,15 @@ const KINDS: { id: string; name: string; params: [string, string, number][]; tar
   { id: 'capture', name: 'Captura (inserção em órbita)', params: [['apo', 'Apoastro final (km)', 10000]] },
 ]
 
-export function Planner({ v, initial }: { v: Vehicle; initial?: string }) {
+/** Manobra pronta para o planejador (do porkchop, por exemplo); `n` muda a cada pedido. */
+export interface PlannerPreset {
+  kind: string
+  params: Record<string, string>
+  body?: string
+  n: number
+}
+
+export function Planner({ v, initial, preset }: { v: Vehicle; initial?: string; preset?: PlannerPreset }) {
   const snap = useStore((s) => s.snap)!
   const [kind, setKind] = useState(initial ?? 'hohmann')
   const [params, setParams] = useState<Record<string, string>>({})
@@ -138,6 +146,13 @@ export function Planner({ v, initial }: { v: Vehicle; initial?: string }) {
   const [body, setBody] = useState('mars')
   const [plan, setPlan] = useState<Plan | null>(null)
   const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (!preset) return
+    setKind(preset.kind)
+    setParams(preset.params)
+    if (preset.body) setBody(preset.body)
+    setPlan(null)
+  }, [preset])
   const def = KINDS.find((k) => k.id === kind)!
   const targets = snap.vehicles.filter((x) => x.id !== v.id && x.kind !== 'debris' && x.central === v.central && x.phase !== 'prelaunch')
   const run = async () => {

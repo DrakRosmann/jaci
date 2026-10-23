@@ -1,11 +1,19 @@
-import { useState } from 'react'
+// Interplanetário: o Sistema Solar visto de cima (as órbitas de verdade, zoom
+// pela roda e arrasto, a trajetória da sonda e a transferência escolhida no
+// porkchop), as janelas de Hohmann de cada planeta, o porkchop com a métrica
+// escolhida e o planejador, que recebe a janela escolhida.
+
+import { useMemo, useRef, useState } from 'react'
 import { useCanvas } from '../components/Chart'
 import { Panel, Tile, toast } from '../components/ui'
 import { t, tx } from '../lib/i18n'
 import { distance, duration, num, utc } from '../lib/format'
 import { usePrediction } from '../lib/hooks'
+import { add, norm, type V3 } from '../lib/attitude'
+import { AU, PLANETS, hohmannWindow, lambert, orbitPath, planetPosition, planetVelocity, transferArc, type Window } from '../lib/ephem'
+import { nextNode } from '../lib/mfd'
 import { store, useStore } from '../lib/store'
-import { Planner } from './OrbitView'
+import { Planner, type PlannerPreset } from './OrbitView'
 
 interface Porkchop {
   from: string
@@ -17,77 +25,219 @@ interface Porkchop {
   best: [number, number, number, number] | null
 }
 
-const AU = 149_597_870_700
+type Metric = 'c3' | 'vinf' | 'total'
+
+interface Pick {
+  dep: number
+  tof: number
+  c3: number
+  vinf: number
+}
+
+const DAY = 86_400
 const EPS = (23.439281 * Math.PI) / 180
 /** Equatorial J2000 → plano da eclíptica (vista de cima). */
 const ecl = (x: number, y: number, z: number): [number, number] => [x, y * Math.cos(EPS) + z * Math.sin(EPS)]
+/** Eclíptica → equatorial J2000. */
+const equatorial = (p: V3): V3 => [p[0], p[1] * Math.cos(EPS) - p[2] * Math.sin(EPS), p[1] * Math.sin(EPS) + p[2] * Math.cos(EPS)]
+
+const COLORS: Record<string, string> = { mercury: '#a8a8a8', venus: '#e8c87a', earth: '#4cc3ff', mars: '#e0643a', jupiter: '#d8b48a', saturn: '#e6d39a', uranus: '#8fe3e8', neptune: '#5c84ff', moon: '#bbb' }
+const RADIUS: Record<string, number> = { mercury: 3, venus: 4, earth: 4.5, mars: 4, jupiter: 7, saturn: 6.5, uranus: 5, neptune: 5, moon: 2.5 }
+
+const bodyName = (id: string) => tx(store.hello?.bodies.find((b) => b.id === id)?.name ?? id)
+const day = (t: number) => utc(t).slice(0, 10)
+const deg = (r: number) => `${num((r * 180) / Math.PI, 0)}°`
 
 export function Interplanetary() {
   const v = useStore((s) => s.selected)
   const snap = useStore((s) => s.snap)!
-  const hello = useStore((s) => s.hello)!
   const [pc, setPc] = useState<Porkchop | null>(null)
   const [busy, setBusy] = useState(false)
-  const [form, setForm] = useState({ to: 'mars', start: utc(snap.t).slice(0, 10), span: '400', tmin: '120', tmax: '400' })
-  const [pick, setPick] = useState<{ dep: number; tof: number; c3: number } | null>(null)
+  const [form, setForm] = useState({ from: 'earth', to: 'mars', start: day(snap.t), span: '400', tmin: '120', tmax: '400' })
+  const [metric, setMetric] = useState<Metric>('c3')
+  const [pick, setPick] = useState<Pick | null>(null)
+  const [preset, setPreset] = useState<PlannerPreset>()
   const heliospan = v?.central === 'sun' ? 86_400 * 400 : 86_400 * 30
   const pred = usePrediction(v && v.kind === 'probe' ? v.id : null, heliospan, 8000, heliospan / 300)
-  const run = async () => {
+  const run = async (f = form) => {
     setBusy(true)
     try {
       const r = await store.request<{ data: Porkchop }>(
-        { type: 'porkchop', from: 'earth', to: form.to, start: `${form.start} 00:00:00`, span_days: Number(form.span), tof_min: Number(form.tmin), tof_max: Number(form.tmax), n: 45 },
+        { type: 'porkchop', from: f.from, to: f.to, start: `${f.start} 00:00:00`, span_days: Number(f.span), tof_min: Number(f.tmin), tof_max: Number(f.tmax), n: 45 },
         120000,
       )
       setPc(r.data)
+      const b = r.data.best
+      setPick(b ? { dep: b[0], tof: b[1], c3: b[2], vinf: b[3] } : null)
     } catch (e) {
       toast(String(e), 'bad')
     }
     setBusy(false)
   }
+  // As janelas mudam devagar: recalcula a cada hora simulada.
+  const hour = Math.floor(snap.t / 3600)
+  const windows = useMemo(
+    () => PLANETS.filter((p) => p !== form.from).map((p) => hohmannWindow(form.from, p, hour * 3600)).filter((w): w is Window => w != null),
+    [form.from, hour],
+  )
+  /** Porkchop em volta da próxima janela de Hohmann. */
+  const aroundWindow = (w: Window) => {
+    const span = Math.min(240, Math.max(60, (0.35 * w.synodic) / DAY))
+    const start = Math.max(snap.t, w.next - (span / 2) * DAY)
+    const tof = w.tof / DAY
+    const f = { ...form, to: w.to, start: day(start), span: String(Math.round(span)), tmin: String(Math.round(tof * 0.6)), tmax: String(Math.round(tof * 1.4)) }
+    setForm(f)
+    run(f)
+  }
+  // Onde a sonda está, no heliocêntrico.
   const earth = snap.bodies.find((b) => b.id === 'earth')!
-  let helio: [number, number, number] | null = null
+  let helio: V3 | null = null
+  let helioV: V3 | null = null
   if (v?.r) {
-    if (v.central === 'sun') helio = v.r
-    else {
+    if (v.central === 'sun') {
+      helio = v.r
+      helioV = v.v ?? null
+    } else {
       const c = snap.bodies.find((b) => b.id === v.central)
       if (c) helio = [c.r[0] + v.r[0], c.r[1] + v.r[1], c.r[2] + v.r[2]]
+      const cv = planetVelocity(v.central === 'moon' ? 'earth' : v.central, snap.t)
+      if (v.v && cv) helioV = add(v.v as V3, equatorial(cv))
     }
   }
-  const fromEarth = helio ? Math.hypot(helio[0] - earth.r[0], helio[1] - earth.r[1], helio[2] - earth.r[2]) : NaN
+  const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+  const fromEarth = helio ? norm(sub(helio, earth.r)) : NaN
+  // Elongação da sonda vista da Terra (ângulo Sol–Terra–sonda): perto de 0°, o Sol atrapalha o enlace.
+  const sep = helio && v?.central !== 'earth' ? Math.acos(Math.max(-1, Math.min(1, -(earth.r[0] * (helio[0] - earth.r[0]) + earth.r[1] * (helio[1] - earth.r[1]) + earth.r[2] * (helio[2] - earth.r[2])) / (norm(earth.r) * fromEarth)))) : null
+  const dest = snap.bodies.find((b) => b.id === form.to)
+  const nn = v ? nextNode(v) : undefined
   // Trajetória prevista em heliocêntrico: soma a posição do corpo central (aproximação: a de agora).
   const central = snap.bodies.find((b) => b.id === (pred.central ?? 'sun'))
   const off = pred.central === 'sun' || !central ? [0, 0, 0] : central.r
   const path = pred.points.map((p) => ecl(p[4] + off[0], p[5] + off[1], p[6] + off[2]))
+  const usable = !!(v && pick && v.central === form.from && pick.dep > snap.t)
+  const toPlanner = () => {
+    if (!pick) return
+    setPreset({ kind: 'injection', params: { depart_in_h: String(Math.round((pick.dep - snap.t) / 3600)), tof_days: String(Math.round(pick.tof)) }, body: form.to, n: Date.now() })
+    toast(t('Janela levada ao planejador: confira e planeje.'), 'good')
+  }
+  const injection = pick && form.from === 'earth' ? injectionDv(pick.c3) : null
   return (
     <div className="grid">
       <div className="grid cols-3">
         <Panel title={t('Sistema Solar (vista de cima)')} className="span-2" flush>
-          <SolarSystem path={path} probe={helio} />
+          <SolarSystem path={path} probe={helio} from={form.from} to={form.to} pick={pick} />
         </Panel>
-        <Panel title={t('Sonda')}>
+        <Panel title={v ? tx(v.name) : t('Sonda')}>
           {v ? (
             <div className="tiles">
-              <Tile label={t('Veículo')} value={tx(v.name)} />
-              <Tile label={t('Corpo central')} value={tx(hello.bodies.find((b) => b.id === v.central)?.name ?? v.central)} />
+              <Tile label={t('Corpo central')} value={bodyName(v.central)} />
+              <Tile label={t('Velocidade')} value={num(v.speed, 0)} unit="m/s" />
+              <Tile label={t('Velocidade heliocêntrica')} value={helioV ? num(norm(helioV) / 1000, 2) : '—'} unit="km/s" />
+              <Tile label={t('Distância do Sol')} value={helio ? `${num(norm(helio) / AU, 3)} ${t('UA')}` : '—'} />
               <Tile label={t('Distância da Terra')} value={distance(fromEarth / 1000)} />
               <Tile label={t('Atraso da luz (ida)')} value={duration(fromEarth / 299_792_458)} />
-              <Tile label={t('Distância do Sol')} value={helio ? distance(Math.hypot(...helio) / 1000) : '—'} />
-              <Tile label={t('Velocidade')} value={num(v.speed, 0)} unit="m/s" />
+              <Tile label={t('Elongação (Sol–Terra–sonda)')} value={sep != null ? deg(sep) : '—'} state={sep != null && sep < (5 * Math.PI) / 180 ? 'red' : sep != null && sep < (15 * Math.PI) / 180 ? 'yellow' : 'none'} title={t('Perto do Sol no céu da Terra, o enlace sofre com o ruído solar (conjunção)')} />
+              <Tile label={`${t('Distância a')} ${bodyName(form.to)}`} value={helio && dest ? distance(norm(sub(helio, dest.r)) / 1000) : '—'} />
+              <Tile label={t('Próxima queima')} value={nn ? `${tx(nn.label)} · ${nn.executing ? t('queimando') : duration(nn.t - snap.t)}` : '—'} />
             </div>
           ) : (
             <span className="muted">{t('Selecione a sonda.')}</span>
           )}
         </Panel>
       </div>
-      <div className="grid cols-3">
-        <Panel title={t('Porkchop: janelas de lançamento')} className="span-2">
-          <div className="row">
-            <span>{t('Terra →')}</span>
-            <select value={form.to} onChange={(e) => setForm({ ...form, to: e.target.value })}>
-              {['mars', 'venus', 'mercury', 'jupiter', 'saturn'].map((b) => (
+      <Panel
+        title={t('Janelas de transferência (Hohmann)')}
+        right={
+          <label className="small">
+            {t('Origem')}{' '}
+            <select value={form.from} onChange={(e) => setForm({ ...form, from: e.target.value, to: e.target.value === form.to ? (e.target.value === 'earth' ? 'mars' : 'earth') : form.to })}>
+              {PLANETS.map((b) => (
                 <option key={b} value={b}>
-                  {tx(hello.bodies.find((x) => x.id === b)?.name ?? b)}
+                  {bodyName(b)}
+                </option>
+              ))}
+            </select>
+          </label>
+        }
+      >
+        <div className="table-scroll">
+          <table className="windows">
+            <thead>
+              <tr>
+                <th>{t('Destino')}</th>
+                <th className="num">{t('Viagem')}</th>
+                <th className="num">C3 (km²/s²)</th>
+                <th className="num">v∞ {t('chegada')} (km/s)</th>
+                <th className="num">{t('Fase agora')}</th>
+                <th className="num">{t('Fase da transferência')}</th>
+                <th>{t('Próxima janela')}</th>
+                <th className="num">{t('Sinódico')}</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {windows.map((w) => {
+                const soon = w.next - snap.t < 60 * DAY
+                return (
+                  <tr key={w.to} className={w.to === form.to ? 'sel' : ''}>
+                    <td>
+                      <span className="dot" style={{ background: COLORS[w.to] }} /> {bodyName(w.to)}
+                    </td>
+                    <td className="num">{fmtDays(w.tof / DAY)}</td>
+                    <td className="num">{num(w.c3, 1)}</td>
+                    <td className="num">{num(w.vinfArr, 2)}</td>
+                    <td className="num">{deg(w.phase)}</td>
+                    <td className="num">{deg(w.phaseReq)}</td>
+                    <td className={soon ? 'good' : ''}>
+                      {day(w.next)} <span className="muted">({t('em')} {fmtDays((w.next - snap.t) / DAY)})</span>
+                    </td>
+                    <td className="num">{fmtDays(w.synodic / DAY)}</td>
+                    <td>
+                      <button className="small" onClick={() => aroundWindow(w)} disabled={busy} title={t('Calcula o porkchop em volta desta janela')}>
+                        {t('Porkchop')} ▸
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="small muted">{t('Órbitas circulares e no mesmo plano: uma primeira ideia. O porkchop resolve o problema de Lambert com as órbitas de verdade.')}</p>
+      </Panel>
+      <div className="grid cols-3">
+        <Panel
+          title={t('Porkchop: janelas de lançamento')}
+          className="span-2"
+          right={
+            <div className="seg">
+              {(
+                [
+                  ['c3', 'C3'],
+                  ['vinf', t('v∞ chegada')],
+                  ['total', t('Total')],
+                ] as [Metric, string][]
+              ).map(([m, label]) => (
+                <button key={m} className={`small ${metric === m ? 'active' : ''}`} onClick={() => setMetric(m)} aria-pressed={metric === m}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          }
+        >
+          <div className="row">
+            <select value={form.from} onChange={(e) => setForm({ ...form, from: e.target.value })} aria-label={t('Origem')}>
+              {PLANETS.filter((b) => b !== form.to).map((b) => (
+                <option key={b} value={b}>
+                  {bodyName(b)}
+                </option>
+              ))}
+            </select>
+            <span>→</span>
+            <select value={form.to} onChange={(e) => setForm({ ...form, to: e.target.value })} aria-label={t('Destino')}>
+              {PLANETS.filter((b) => b !== form.from).map((b) => (
+                <option key={b} value={b}>
+                  {bodyName(b)}
                 </option>
               ))}
             </select>
@@ -98,123 +248,273 @@ export function Interplanetary() {
             <span className="muted">{t('viagem (dias)')}</span>
             <input value={form.tmin} onChange={(e) => setForm({ ...form, tmin: e.target.value })} style={{ width: 55 }} />
             <input value={form.tmax} onChange={(e) => setForm({ ...form, tmax: e.target.value })} style={{ width: 55 }} />
-            <button className="primary" onClick={run} disabled={busy}>
+            <button className="primary" onClick={() => run()} disabled={busy}>
               {busy ? t('Calculando…') : t('Calcular')}
             </button>
           </div>
-          {pc && <PorkchopPlot pc={pc} onPick={setPick} />}
-          {pc?.best && (
-            <div className="small" style={{ marginTop: 6 }}>
-              {t('Melhor')}: {t('partida')} {utc(pc.best[0]).slice(0, 10)}, {num(pc.best[1], 0)} {t('dias')}, C3 {num(pc.best[2], 1)} km²/s², v∞ {t('chegada')} {num(pc.best[3], 2)} km/s
-            </div>
-          )}
+          {pc ? <PorkchopPlot pc={pc} metric={metric} pick={pick} onPick={setPick} /> : <div className="porkchop-empty muted">{t('Escolha origem, destino e datas e calcule — ou toque em “Porkchop ▸” numa janela acima.')}</div>}
           {pick && (
-            <div className="small" style={{ marginTop: 4 }}>
-              {t('Escolhido')}: {t('partida')} {utc(pick.dep).slice(0, 10)} ({t('em')} {duration(pick.dep - snap.t)}), {num(pick.tof, 0)} {t('dias')}, C3 {num(pick.c3, 1)} —{' '}
-              {t('no planejador: partida em {h} h, viagem de {d} dias', { h: Math.round((pick.dep - snap.t) / 3600), d: Math.round(pick.tof) })}
+            <div className="pick">
+              <div className="tiles">
+                <Tile label={t('Partida')} value={day(pick.dep)} title={`${t('em')} ${duration(pick.dep - snap.t)}`} />
+                <Tile label={t('Chegada')} value={day(pick.dep + pick.tof * DAY)} />
+                <Tile label={t('Viagem')} value={num(pick.tof, 0)} unit={t('dias')} />
+                <Tile label="C3" value={num(pick.c3, 1)} unit="km²/s²" />
+                <Tile label={t('v∞ partida')} value={num(Math.sqrt(pick.c3), 2)} unit="km/s" />
+                <Tile label={t('v∞ chegada')} value={num(pick.vinf, 2)} unit="km/s" />
+                {injection != null && <Tile label={t('Δv da órbita de 200 km')} value={num(injection, 0)} unit="m/s" />}
+              </div>
+              <div className="row">
+                {pc?.best && pick.dep === pc.best[0] && pick.tof === pc.best[1] && <span className="small good">★ {t('Melhor do gráfico (menor √C3 + v∞)')}</span>}
+                <button className="primary small" onClick={toPlanner} disabled={!usable} title={usable ? t('Preenche a injeção no planejador') : t('A sonda selecionada precisa estar na origem, antes da partida')}>
+                  {t('Usar no planejador')}
+                </button>
+              </div>
             </div>
           )}
         </Panel>
-        {v && <Planner v={v} initial={v.central === 'earth' ? 'injection' : v.central === 'sun' ? 'tcm' : 'capture'} />}
+        {v && <Planner v={v} initial={v.central === 'earth' ? 'injection' : v.central === 'sun' ? 'tcm' : 'capture'} preset={preset} />}
       </div>
     </div>
   )
 }
 
-function PorkchopPlot({ pc, onPick }: { pc: Porkchop; onPick: (p: { dep: number; tof: number; c3: number }) => void }) {
+const fmtDays = (d: number) => (d >= 730 ? `${num(d / 365.25, 1)} ${t('anos')}` : `${num(d, 0)} ${t('dias')}`)
+
+/** Δv para sair de uma órbita circular de 200 km na Terra com o C3 dado (m/s). */
+function injectionDv(c3: number): number {
+  const mu = 3.986004418e14
+  const r = 6_378_137 + 200_000
+  return Math.sqrt(c3 * 1e6 + (2 * mu) / r) - Math.sqrt(mu / r)
+}
+
+/** Paleta sequencial (do escuro ao claro), boa para ler "melhor" e "pior". */
+const STOPS = ['#fde725', '#7ad151', '#22a884', '#2a788e', '#414487', '#2b1145']
+function ramp(f: number): string {
+  const x = Math.max(0, Math.min(1, f)) * (STOPS.length - 1)
+  const i = Math.min(STOPS.length - 2, Math.floor(x))
+  const k = x - i
+  const c = (h: string, o: number) => parseInt(h.slice(o, o + 2), 16)
+  const mix = (o: number) => Math.round(c(STOPS[i], o) * (1 - k) + c(STOPS[i + 1], o) * k)
+  return `rgb(${mix(1)},${mix(3)},${mix(5)})`
+}
+
+const PAD = { l: 56, b: 34, t: 10, r: 78 }
+
+function PorkchopPlot({ pc, metric, pick, onPick }: { pc: Porkchop; metric: Metric; pick: Pick | null; onPick: (p: Pick) => void }) {
+  const [hover, setHover] = useState<{ i: number; j: number; x: number; y: number } | null>(null)
+  const value = (i: number, j: number): number | null => {
+    const c = pc.c3[j]?.[i]
+    const a = pc.vinf_arr[j]?.[i]
+    if (c == null || a == null) return null
+    return metric === 'c3' ? c : metric === 'vinf' ? a : Math.sqrt(c) + a
+  }
+  const unit = metric === 'c3' ? 'km²/s²' : 'km/s'
   const ref = useCanvas(
     (ctx, w, h) => {
-      const pad = { l: 50, b: 28, t: 8, r: 70 }
       const nx = pc.departures.length
       const ny = pc.tofs_days.length
-      const cw = (w - pad.l - pad.r) / nx
-      const ch = (h - pad.t - pad.b) / ny
-      ctx.fillStyle = '#081426'
+      const cw = (w - PAD.l - PAD.r) / nx
+      const ch = (h - PAD.t - PAD.b) / ny
+      ctx.fillStyle = '#060b16'
       ctx.fillRect(0, 0, w, h)
-      const vals = pc.c3.flat().filter((x): x is number => x != null && isFinite(x))
-      const lo = Math.min(...vals)
-      const hi = Math.min(Math.max(...vals), lo * 4 + 10)
+      const vals: number[] = []
+      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+        const x = value(i, j)
+        if (x != null && isFinite(x)) vals.push(x)
+      }
+      if (!vals.length) return
+      vals.sort((a, b) => a - b)
+      const lo = vals[0]
+      // A escala se concentra perto do mínimo (onde estão as janelas): o que passa disso é "caro" e fica escuro.
+      const hi = Math.max(lo + 1e-6, Math.min(vals[Math.floor(vals.length * 0.6)], metric === 'c3' ? lo * 3 + 10 : lo * 2 + 2))
       for (let j = 0; j < ny; j++) {
         for (let i = 0; i < nx; i++) {
-          const c = pc.c3[j][i]
+          const c = value(i, j)
           if (c == null) continue
-          const f = Math.min(1, (c - lo) / (hi - lo))
-          ctx.fillStyle = `hsl(${(1 - f) * 220}, 80%, ${18 + (1 - f) * 40}%)`
-          ctx.fillRect(pad.l + i * cw, h - pad.b - (j + 1) * ch, cw + 0.5, ch + 0.5)
+          ctx.fillStyle = ramp((c - lo) / (hi - lo))
+          ctx.fillRect(PAD.l + i * cw, h - PAD.b - (j + 1) * ch, cw + 0.5, ch + 0.5)
         }
       }
       ctx.fillStyle = '#8494b3'
       ctx.font = '11px ui-monospace, monospace'
-      for (let i = 0; i < nx; i += Math.ceil(nx / 6)) ctx.fillText(utc(pc.departures[i]).slice(2, 10), pad.l + i * cw, h - 8)
-      for (let j = 0; j < ny; j += Math.ceil(ny / 6)) ctx.fillText(`${pc.tofs_days[j].toFixed(0)} d`, 6, h - pad.b - j * ch)
+      ctx.textAlign = 'center'
+      for (let i = 0; i < nx; i += Math.ceil(nx / 6)) ctx.fillText(utc(pc.departures[i]).slice(2, 10), PAD.l + (i + 0.5) * cw, h - PAD.b + 14)
+      ctx.fillText(t('partida'), PAD.l + (w - PAD.l - PAD.r) / 2, h - 4)
+      ctx.textAlign = 'right'
+      for (let j = 0; j < ny; j += Math.ceil(ny / 6)) ctx.fillText(`${pc.tofs_days[j].toFixed(0)} d`, PAD.l - 6, h - PAD.b - (j + 0.5) * ch + 4)
+      ctx.textAlign = 'left'
+      // Melhor (★) e escolhido (○).
+      const cell = (dep: number, tof: number) => [pc.departures.findIndex((d) => d >= dep - 1), pc.tofs_days.findIndex((d) => d >= tof - 1e-6)]
       if (pc.best) {
-        const i = pc.departures.findIndex((d) => d >= pc.best![0])
-        const j = pc.tofs_days.findIndex((d) => d >= pc.best![1])
+        const [i, j] = cell(pc.best[0], pc.best[1])
         ctx.strokeStyle = '#fff'
-        ctx.strokeRect(pad.l + i * cw - 3, h - pad.b - (j + 1) * ch - 3, cw + 6, ch + 6)
+        ctx.lineWidth = 1.5
+        ctx.strokeRect(PAD.l + i * cw - 3, h - PAD.b - (j + 1) * ch - 3, cw + 6, ch + 6)
+      }
+      if (pick) {
+        const [i, j] = cell(pick.dep, pick.tof)
+        ctx.strokeStyle = '#ff8a3d'
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.arc(PAD.l + (i + 0.5) * cw, h - PAD.b - (j + 0.5) * ch, Math.max(cw, ch) + 3, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+      if (hover) {
+        ctx.strokeStyle = '#ffffff80'
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.moveTo(PAD.l + (hover.i + 0.5) * cw, PAD.t)
+        ctx.lineTo(PAD.l + (hover.i + 0.5) * cw, h - PAD.b)
+        ctx.moveTo(PAD.l, h - PAD.b - (hover.j + 0.5) * ch)
+        ctx.lineTo(w - PAD.r, h - PAD.b - (hover.j + 0.5) * ch)
+        ctx.stroke()
       }
       // Escala.
+      const sx = w - PAD.r + 14
       for (let k = 0; k < 100; k++) {
-        const f = k / 99
-        ctx.fillStyle = `hsl(${(1 - f) * 220}, 80%, ${18 + (1 - f) * 40}%)`
-        ctx.fillRect(w - pad.r + 12, pad.t + (1 - f) * (h - pad.t - pad.b), 12, (h - pad.t - pad.b) / 99 + 1)
+        ctx.fillStyle = ramp(k / 99)
+        ctx.fillRect(sx, h - PAD.b - ((k + 1) / 100) * (h - PAD.t - PAD.b), 12, (h - PAD.t - PAD.b) / 100 + 1)
       }
       ctx.fillStyle = '#d9e2f2'
-      ctx.fillText(`${hi.toFixed(0)}`, w - pad.r + 28, pad.t + 10)
-      ctx.fillText(`${lo.toFixed(1)}`, w - pad.r + 28, h - pad.b)
-      ctx.fillText('C3', w - pad.r + 28, (h - pad.b) / 2)
+      ctx.fillText(`${hi.toFixed(metric === 'c3' ? 0 : 1)}+`, sx + 16, PAD.t + 10)
+      ctx.fillText(lo.toFixed(metric === 'c3' ? 1 : 2), sx + 16, h - PAD.b)
+      ctx.fillText(metric === 'c3' ? 'C3' : metric === 'vinf' ? 'v∞' : 'Σv∞', sx + 16, (h - PAD.b) / 2)
+      ctx.fillStyle = '#8494b3'
+      ctx.fillText(unit, sx + 16, (h - PAD.b) / 2 + 14)
     },
-    [pc],
+    [pc, metric, pick, hover],
   )
-  const click = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const at = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const r = e.currentTarget.getBoundingClientRect()
-    const pad = { l: 50, b: 28, t: 8, r: 70 }
     const x = e.clientX - r.left
     const y = e.clientY - r.top
-    const i = Math.floor(((x - pad.l) / (r.width - pad.l - pad.r)) * pc.departures.length)
-    const j = Math.floor(((r.height - pad.b - y) / (r.height - pad.t - pad.b)) * pc.tofs_days.length)
-    const c = pc.c3[j]?.[i]
-    if (c != null) onPick({ dep: pc.departures[i], tof: pc.tofs_days[j], c3: c })
+    const i = Math.floor(((x - PAD.l) / (r.width - PAD.l - PAD.r)) * pc.departures.length)
+    const j = Math.floor(((r.height - PAD.b - y) / (r.height - PAD.t - PAD.b)) * pc.tofs_days.length)
+    return i >= 0 && j >= 0 && i < pc.departures.length && j < pc.tofs_days.length ? { i, j, x, y } : null
   }
+  const hv = hover ? value(hover.i, hover.j) : null
   return (
-    <div className="canvas-wrap" style={{ height: 320, marginTop: 8 }}>
-      <canvas ref={ref} onClick={click} style={{ cursor: 'crosshair' }} />
+    <div className="canvas-wrap porkchop" style={{ height: 340, marginTop: 8 }}>
+      <canvas
+        ref={ref}
+        onMouseMove={(e) => setHover(at(e))}
+        onMouseLeave={() => setHover(null)}
+        onClick={(e) => {
+          const p = at(e)
+          const c = p && pc.c3[p.j]?.[p.i]
+          const a = p && pc.vinf_arr[p.j]?.[p.i]
+          if (p && c != null && a != null) onPick({ dep: pc.departures[p.i], tof: pc.tofs_days[p.j], c3: c, vinf: a })
+        }}
+        style={{ cursor: 'crosshair' }}
+        role="img"
+        aria-label={t('Porkchop: janelas de lançamento')}
+      />
+      {hover && hv != null && (
+        <div className="chart-tip" style={{ left: Math.min(hover.x + 14, 9999), top: hover.y + 10 }}>
+          <b>{day(pc.departures[hover.i])}</b> · {num(pc.tofs_days[hover.j], 0)} {t('dias')}
+          <br />
+          C3 {num(pc.c3[hover.j][hover.i], 1)} · v∞ {num(pc.vinf_arr[hover.j][hover.i], 2)} km/s
+        </div>
+      )}
     </div>
   )
 }
 
-function SolarSystem({ path, probe }: { path: [number, number][]; probe: [number, number, number] | null }) {
+/** O Sistema Solar de cima: órbitas, planetas, a sonda e a transferência escolhida. Roda aproxima, arrastar move, duplo clique volta ao Sol. */
+function SolarSystem({ path, probe, from, to, pick }: { path: [number, number][]; probe: V3 | null; from: string; to: string; pick: Pick | null }) {
   const snap = useStore((s) => s.snap)!
   const [zoom, setZoom] = useState(2.2)
+  const [center, setCenter] = useState<'sun' | 'probe' | string>('sun')
+  const [pan, setPan] = useState<[number, number]>([0, 0])
+  const drag = useRef<{ x: number; y: number; pan: [number, number] } | null>(null)
+  // A transferência do porkchop: Lambert entre as posições na partida e na chegada.
+  const transfer = useMemo(() => {
+    if (!pick) return null
+    const t2 = pick.dep + pick.tof * DAY
+    const r1 = planetPosition(from, pick.dep)
+    const r2 = planetPosition(to, t2)
+    if (!r1 || !r2) return null
+    const sol = lambert(r1, r2, pick.tof * DAY)
+    return { r1, r2, arc: sol ? transferArc(r1, sol[0], r2) : [], t2 }
+  }, [pick, from, to])
   const ref = useCanvas(
     (ctx, w, h) => {
       ctx.fillStyle = '#050914'
       ctx.fillRect(0, 0, w, h)
+      // Centro da vista: o Sol, a sonda ou um planeta, mais o arrasto.
+      let c: [number, number] = [0, 0]
+      if (center === 'probe' && probe) c = ecl(probe[0], probe[1], probe[2])
+      else if (center !== 'sun') {
+        const b = snap.bodies.find((x) => x.id === center)
+        if (b) c = ecl(b.r[0], b.r[1], b.r[2])
+      }
       const s = Math.min(w, h) / 2 / (zoom * AU)
-      const X = (x: number) => w / 2 + x * s
-      const Y = (y: number) => h / 2 - y * s
-      ctx.fillStyle = '#ffcc33'
-      ctx.beginPath()
-      ctx.arc(w / 2, h / 2, 6, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.font = '11px system-ui'
-      const colors: Record<string, string> = { mercury: '#999', venus: '#e8c87a', earth: '#4cc3ff', mars: '#e0643a', jupiter: '#d8b48a', saturn: '#e6d39a', uranus: '#8fe3e8', neptune: '#5c84ff' }
-      for (const b of snap.bodies) {
-        if (b.id === 'sun' || b.id === 'moon') continue
-        const [bx, by] = ecl(b.r[0], b.r[1], b.r[2])
-        const r = Math.hypot(bx, by)
-        ctx.strokeStyle = '#1a2540'
+      const X = (x: number) => w / 2 + (x - c[0]) * s + pan[0]
+      const Y = (y: number) => h / 2 - (y - c[1]) * s + pan[1]
+      // Órbitas (elementos médios), a de origem e a de destino em destaque.
+      for (const id of PLANETS) {
+        const pts = orbitPath(id, snap.t)
+        const hl = id === from || id === to
+        ctx.strokeStyle = hl ? `${COLORS[id]}aa` : '#1d2945'
+        ctx.lineWidth = hl ? 1.5 : 1
         ctx.beginPath()
-        ctx.arc(w / 2, h / 2, r * s, 0, Math.PI * 2)
+        pts.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y))))
         ctx.stroke()
-        ctx.fillStyle = colors[b.id] ?? '#ccc'
+      }
+      // Sol com brilho.
+      const g = ctx.createRadialGradient(X(0), Y(0), 0, X(0), Y(0), 22)
+      g.addColorStop(0, '#fff6c0')
+      g.addColorStop(0.25, '#ffcc33')
+      g.addColorStop(1, '#ffcc3300')
+      ctx.fillStyle = g
+      ctx.beginPath()
+      ctx.arc(X(0), Y(0), 22, 0, Math.PI * 2)
+      ctx.fill()
+      // Transferência escolhida: o arco, a partida e onde o destino estará na chegada.
+      if (transfer && transfer.arc.length > 1) {
+        ctx.strokeStyle = '#ff8a3d'
+        ctx.lineWidth = 2
+        ctx.setLineDash([6, 4])
         ctx.beginPath()
-        ctx.arc(X(bx), Y(by), 4, 0, Math.PI * 2)
+        transfer.arc.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y))))
+        ctx.stroke()
+        ctx.setLineDash([])
+        ctx.font = '11px ui-monospace, monospace'
+        for (const [p, label, color] of [
+          [transfer.r1, `${t('partida')} ${day(pick!.dep)}`, COLORS[from]],
+          [transfer.r2, `${t('chegada')} ${day(transfer.t2)}`, COLORS[to]],
+        ] as [V3, string, string][]) {
+          ctx.strokeStyle = color
+          ctx.lineWidth = 1.5
+          ctx.beginPath()
+          ctx.arc(X(p[0]), Y(p[1]), 7, 0, Math.PI * 2)
+          ctx.stroke()
+          ctx.fillStyle = '#ffb27a'
+          ctx.fillText(label, X(p[0]) + 10, Y(p[1]) + 14)
+        }
+      }
+      // Planetas (e a Lua, de perto).
+      ctx.font = '11px system-ui'
+      for (const b of snap.bodies) {
+        if (b.id === 'sun' || (b.id === 'moon' && zoom > 0.05)) continue
+        const [bx, by] = ecl(b.r[0], b.r[1], b.r[2])
+        ctx.fillStyle = COLORS[b.id] ?? '#ccc'
+        ctx.beginPath()
+        ctx.arc(X(bx), Y(by), RADIUS[b.id] ?? 4, 0, Math.PI * 2)
         ctx.fill()
-        ctx.fillText(tx(store.hello?.bodies.find((x) => x.id === b.id)?.name ?? b.id), X(bx) + 6, Y(by) - 4)
+        if (b.id === 'saturn') {
+          ctx.strokeStyle = '#e6d39a99'
+          ctx.beginPath()
+          ctx.ellipse(X(bx), Y(by), 11, 4, -0.4, 0, Math.PI * 2)
+          ctx.stroke()
+        }
+        ctx.fillStyle = b.id === from || b.id === to ? '#e8eefc' : '#9fb0d0'
+        ctx.fillText(bodyName(b.id), X(bx) + 8, Y(by) - 6)
       }
       if (path.length > 1) {
         ctx.strokeStyle = '#2dd4bf'
+        ctx.lineWidth = 1.5
         ctx.beginPath()
         path.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y))))
         ctx.stroke()
@@ -224,23 +524,78 @@ function SolarSystem({ path, probe }: { path: [number, number][]; probe: [number
         ctx.fillStyle = '#fff'
         ctx.fillRect(X(px) - 3, Y(py) - 3, 6, 6)
       }
+      // Régua e data.
+      const target = (w * 0.18) / s
+      const p10 = 10 ** Math.floor(Math.log10(target / AU))
+      const bar = [1, 2, 5].map((m) => m * p10).filter((m) => m * AU <= target).pop() ?? p10
+      ctx.strokeStyle = '#8494b3'
       ctx.fillStyle = '#8494b3'
-      ctx.fillText(`${zoom} ${t('UA')}`, 8, h - 8)
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(12, h - 14)
+      ctx.lineTo(12 + bar * AU * s, h - 14)
+      ctx.moveTo(12, h - 18)
+      ctx.lineTo(12, h - 10)
+      ctx.moveTo(12 + bar * AU * s, h - 18)
+      ctx.lineTo(12 + bar * AU * s, h - 10)
+      ctx.stroke()
+      ctx.font = '11px ui-monospace, monospace'
+      ctx.fillText(`${bar < 0.01 ? num(bar * AU / 1e3, 0) + ' km' : `${num(bar, bar < 1 ? 2 : 0)} ${t('UA')}`}`, 12, h - 22)
+      ctx.textAlign = 'right'
+      ctx.fillText(day(snap.t), w - 10, h - 10)
+      ctx.textAlign = 'left'
     },
-    [snap, path, probe, zoom],
+    [snap, path, probe, zoom, center, pan, from, to, transfer],
   )
+  const reset = () => {
+    setPan([0, 0])
+    setCenter('sun')
+  }
   return (
     <div style={{ position: 'relative' }}>
-      <div className="canvas-wrap" style={{ height: 420 }}>
-        <canvas ref={ref} />
+      <div className="canvas-wrap" style={{ height: 440 }}>
+        <canvas
+          ref={ref}
+          role="img"
+          aria-label={t('Sistema Solar (vista de cima)')}
+          className="pannable"
+          onWheel={(e) => setZoom((z) => Math.min(60, Math.max(0.002, z * (e.deltaY > 0 ? 1.15 : 1 / 1.15))))}
+          onPointerDown={(e) => {
+            drag.current = { x: e.clientX, y: e.clientY, pan }
+            e.currentTarget.setPointerCapture(e.pointerId)
+          }}
+          onPointerMove={(e) => {
+            const d = drag.current
+            if (d) setPan([d.pan[0] + e.clientX - d.x, d.pan[1] + e.clientY - d.y])
+          }}
+          onPointerUp={() => (drag.current = null)}
+          onDoubleClick={reset}
+        />
       </div>
-      <div className="row" style={{ position: 'absolute', top: 8, right: 8 }}>
+      <div className="row solar-tools">
         {[0.01, 1.2, 2.2, 6, 32].map((z) => (
           <button key={z} className={`small ${zoom === z ? 'active' : ''}`} onClick={() => setZoom(z)}>
             {z} {t('UA')}
           </button>
         ))}
+        <select
+          value={center}
+          onChange={(e) => {
+            setCenter(e.target.value)
+            setPan([0, 0])
+          }}
+          aria-label={t('Centro da vista')}
+        >
+          <option value="sun">{t('centro')}: {bodyName('sun')}</option>
+          {probe && <option value="probe">{t('centro')}: {t('sonda')}</option>}
+          {PLANETS.map((p) => (
+            <option key={p} value={p}>
+              {t('centro')}: {bodyName(p)}
+            </option>
+          ))}
+        </select>
       </div>
+      <div className="solar-hint small muted">{t('roda: zoom · arrastar: mover · duplo clique: voltar')}</div>
     </div>
   )
 }

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Chart, COLORS } from '../components/Chart'
 import { Bar, CmdButton, Empty, Panel, Tile, Tm, sendCommand } from '../components/ui'
 import { t, tx } from '../lib/i18n'
-import { duration, latlon, num } from '../lib/format'
+import { chuteState, duration, latlon, num } from '../lib/format'
 import { store, useStore } from '../lib/store'
 import type { Vehicle } from '../types'
 import { AbortPanel } from './Launch'
@@ -259,8 +259,4 @@ function EntryPanel({ v }: { v: Vehicle }) {
       </Panel>
     </div>
   )
-}
-
-function chuteState(s: string): string {
-  return ({ stowed: 'guardado', deployed: 'aberto', cut: 'cortado', failed: 'FALHA' } as Record<string, string>)[s] ?? s
 }

@@ -96,3 +96,8 @@ export function kerbinTime(ut: number | null | undefined): string {
   const s = ut % day
   return `A${y} D${d} ${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(Math.floor(s % 60))}`
 }
+
+/** Estado de um paraquedas, em português (a chave de tradução). */
+export function chuteState(s: string): string {
+  return ({ stowed: 'guardado', deployed: 'aberto', cut: 'cortado', failed: 'FALHA' } as Record<string, string>)[s] ?? s
+}

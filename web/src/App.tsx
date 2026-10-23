@@ -8,7 +8,7 @@ import { JoinDialog } from './components/Room'
 import { LessonPanel } from './components/LessonPanel'
 import { Shortcuts } from './components/Shortcuts'
 import { sound } from './lib/audio'
-import { PILOT_KEYS, pilot } from './lib/pilot'
+import { pilot } from './lib/pilot'
 import { t, tx } from './lib/i18n'
 import { utc } from './lib/format'
 import { CONSOLES, CONSOLE_KEYS, WARPS } from './lib/consoles'
@@ -80,7 +80,16 @@ export default function App() {
   const theme = useStore((s) => s.ui.theme)
   const clocks = useStore((s) => s.ui.clocks)
   useEffect(() => {
-    document.documentElement.dataset.theme = theme
+    // Automático: claro ou escuro como o sistema, e muda junto com ele.
+    if (theme !== 'auto') {
+      document.documentElement.dataset.theme = theme
+      return
+    }
+    const mq = window.matchMedia('(prefers-color-scheme: light)')
+    const apply = () => (document.documentElement.dataset.theme = mq.matches ? 'claro' : 'moderno')
+    apply()
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
   }, [theme])
   const Current = VIEWS[view]
   // Telão: tela cheia, sem menus nem barras.
@@ -255,7 +264,7 @@ function useKeys(setHelp: (b: boolean) => void) {
       const el = e.target as HTMLElement | null
       if (el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))) return
       // Pilotando pelo teclado: as teclas de voo não são atalhos.
-      if (pilot.active && PILOT_KEYS.includes(e.key.toLowerCase())) return
+      if (pilot.active && pilot.keys().includes(e.key.toLowerCase())) return
       const i = CONSOLE_KEYS.indexOf(e.key)
       if (i >= 0 && CONSOLES[i]) {
         store.setUi({ view: CONSOLES[i].id })

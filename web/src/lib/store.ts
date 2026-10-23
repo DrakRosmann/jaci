@@ -37,7 +37,7 @@ export interface UiState {
   eventsOpen: boolean
   navCollapsed: boolean
   /** Visual das telas: moderno, fósforo verde (Apollo) ou âmbar. */
-  theme: 'moderno' | 'fosforo' | 'ambar'
+  theme: 'moderno' | 'claro' | 'auto' | 'fosforo' | 'ambar' | 'noite' | 'contraste'
   /** Faixa de relógios da sala (GMT, GET, próximo evento, AOS/LOS). */
   clocks: boolean
 }

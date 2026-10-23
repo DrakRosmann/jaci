@@ -8,6 +8,7 @@ import { circle, footprintDeg, splitDateline, subsolar, terminator, wrapLon } fr
 import { t } from '../lib/i18n'
 import { store, useStore } from '../lib/store'
 import type { Vehicle } from '../types'
+import { cssVar } from '../lib/theme'
 
 let land: [number, number][][] | null = null
 let landPromise: Promise<void> | null = null
@@ -234,11 +235,6 @@ export function MapView({
 }
 
 /** A camada fixa: fundo, grade e continentes. */
-/** Cor do tema (variável CSS), ou a padrão. */
-function cssVar(name: string, fallback: string): string {
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-  return v || fallback
-}
 
 /** Cor do chão dos corpos sem mapa (a Terra usa as cores do tema). */
 const GROUND: Record<string, string> = { moon: '#26272b', mars: '#3d1f14' }

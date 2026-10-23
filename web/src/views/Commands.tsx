@@ -47,7 +47,7 @@ export function Commands() {
                 {tx(g)}
               </div>
               {list.map((c) => (
-                <div key={c.id} onClick={() => setSel(c.id)} style={{ padding: '4px 14px', cursor: 'pointer', background: c.id === def?.id ? '#16274a' : undefined }}>
+                <div key={c.id} onClick={() => setSel(c.id)} style={{ padding: '4px 14px', cursor: 'pointer', background: c.id === def?.id ? 'var(--sel)' : undefined }}>
                   {tx(c.name)} {c.hazardous && <span className="bad small">⚠</span>} {c.ground && <span className="muted small">({t('solo')})</span>}
                 </div>
               ))}

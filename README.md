@@ -134,8 +134,18 @@ sequência automática de ativação de satélite.
 * **Estações de solo (INCO):** 17 estações (Alcântara, Natal, Cuiabá, Kourou, …, e a rede de espaço
   profundo), visada ao vivo para o veículo, enlace atual e as passagens das próximas 24 h; e os
   satélites reais acompanhados por TLE (veja abaixo).
-* **Interplanetário (NAV):** porkchop (C3 de partida e v∞ de chegada) com clique para escolher a
-  janela, vista do Sistema Solar com a sonda e a trajetória, distância e atraso da luz.
+* **Interplanetário (NAV):** o Sistema Solar visto de cima, com as órbitas de verdade dos
+  planetas (os elementos médios de Standish, os mesmos do núcleo), zoom pela roda, arrasto, centro
+  no Sol, na sonda ou num planeta, a trajetória prevista da sonda e o arco da transferência
+  escolhida no porkchop (resolvida por Lambert), com onde o planeta de origem está na partida e o
+  de destino na chegada; a tabela de janelas de Hohmann de qualquer planeta para os outros (viagem,
+  C3, v∞ de chegada, ângulo de fase de agora e o da transferência, a próxima janela e o período
+  sinódico), com um botão que calcula o porkchop em volta da janela; o porkchop de qualquer planeta
+  para qualquer outro, colorido por C3, por v∞ de chegada ou pela soma, com os valores sob o mouse,
+  o melhor ponto marcado e, no ponto escolhido, as datas, os v∞, o Δv a partir de uma órbita de
+  200 km e o botão que leva a janela ao planejador de manobras; e a sonda: velocidade
+  heliocêntrica, distâncias do Sol, da Terra e do destino, atraso da luz, elongação (o ângulo
+  Sol–Terra–sonda, que avisa da conjunção solar) e a próxima queima.
 * **Procedimentos (PROC):** listas de verificação que mandam comandos e esperam condições de
   telemetria (contagem, ativação de satélite, reentrada, acoplamento, despressurização, bateria
   baixa, descarga de dados, injeção interplanetária, reimpulso).
@@ -146,17 +156,38 @@ sequência automática de ativação de satélite.
   vazamento na cabine, remoção de CO₂, paraquedas, célula a combustível, barco na área, falha de solo
   e tempestade.
 * **Kerbal Space Program (KSP):** a ligação com o jogo e o controle das naves pelo kOS (veja abaixo).
-* **Controle manual (PILOT):** dois MFDs (telas multifunção com teclas na moldura) com as páginas
-  ADI — horizonte artificial com escada de arfagem, arco de rolamento, fita de rumo, taxas e os
-  marcadores de prógrado, normal e radial —, ORB (a órbita vista de cima do plano, com apsides,
-  tempos até eles e os outros veículos), RES (propelente por estágio, RCS, bateria, ar, água,
-  gravador, escudo e Δv), 3D (a nave) e MAPA; o quadro de avisos (alarme mestre, falha de motor,
-  combustível, bateria, pressão da cabine, enlace, modo seguro, terminação armada…); e o painel de
-  chaves: ignição, corte e potência, separação de estágio, carga, coifa e torre (com tampa de
-  proteção), aborto nos modos possíveis no momento, modo seguro, terminação de voo, modos de
-  atitude, pilotagem manual (setas ou teclado: W/S arfagem, A/D guinada, Q/E rolamento) que gira a
-  atitude alvo pelo enlace, pulsos de translação do RCS (I/K, J/L, H/N), paraquedas, trem,
-  painéis, transmissor e, nas naves com pernas, a descida propulsada (PDI).
+* **Controle manual (PILOT):** de um a quatro MFDs (telas multifunção com teclas na moldura). As
+  teclas de cima são as páginas preferidas de cada tela, e o MENU mostra todas e escolhe quais ficam
+  na moldura. As páginas: ADI (horizonte artificial com escada de arfagem, arco de rolamento, fita
+  de rumo, taxas, os marcadores de prógrado, normal e radial, o vetor da próxima queima ✚ e a
+  direção do alvo ◎); ORB (a órbita vista de cima do plano, com apsides, tempos até eles e os outros
+  veículos); MNV (a queima escolhida: contagem, Δv em RTN, quanto falta, duração, e o diretor de voo,
+  que mostra para onde girar); ENG (cada motor com estado, empuxo, potência, pressão de câmara e
+  ignições, TWR atual e máximo, e o tempo de queima do Δv restante); RES (propelente por estágio,
+  RCS, bateria, ar, água, gravador, escudo e Δv); DSC (descida: fita de altitude, velocidade vertical
+  e horizontal, tempo até o chão e a altura da queima de parada com o motor a pleno); ENT (carga g,
+  q, Mach, fluxo, escudo, inclinação lateral, local de pouso e paraquedas); TGT (o alvo no plano
+  V-bar/R-bar dele, distância, taxa, aproximação máxima em linha reta, e as teclas para trocar de
+  alvo e apontar para ele); SIS (energia, rodas de reação, RCS e nós térmicos); COM (estação,
+  margem, taxa, atraso, gravador, com as teclas do transmissor e da descarga); TLM (os pontos de
+  telemetria que a pessoa escolher, com a curva dos últimos 15 minutos); ALM (alarmes com o
+  reconhecimento); 3D (a nave) e MAPA. O quadro de avisos acende com alarme mestre (que reconhece
+  todos ao toque), falha de motor, combustível, bateria, subtensão, pressão da cabine, enlace,
+  apagão, modo seguro, terminação armada, guiamento, queima próxima, RCS, rodas saturadas,
+  temperatura, aquecimento e acoplamento. O painel de chaves tem ignição, corte e potência,
+  separação de estágio, carga, coifa e torre (com tampa de proteção), aborto nos modos possíveis no
+  momento, modo seguro, terminação de voo, modos de atitude (incluindo alvo, Terra e livre) e a
+  descarga das rodas, pilotagem manual que gira a atitude alvo pelo enlace, pulsos de translação do
+  RCS, manobras (circularizar no apoastro ou no periastro, uma queima em RTN programada à mão,
+  apagar queimas), encontro (escolher o alvo, apontar, aproximar e acoplar, desacoplar),
+  paraquedas, reentrada automática e guiada ou balística, trem, painéis, radiadores, transmissor,
+  antena, gravador e, nas naves com pernas, a descida propulsada (PDI).
+  Em ⚙ Personalizar escolhem-se quantos MFDs e de que tamanho, as cores das telas (coloridas,
+  fósforo verde ou âmbar), o painel à direita ou embaixo, o quadro de avisos, o que o horizonte
+  mostra, quais grupos do painel aparecem, o passo da potência e as teclas de voo (padrão: W/S
+  arfagem, A/D guinada, Q/E rolamento, I/K, J/L e H/N para o RCS, R/F mais e menos potência, Z/X
+  máxima e zero, B ignição, O corte, G manter atitude). Os comandos perigosos nunca vão para o
+  teclado. Tudo fica guardado no navegador.
 * **Pouso na Lua e em Marte:** naves com pernas tocam o solo se chegarem a menos de 3,5 m/s na
   vertical e 2,5 m/s de lado. O programa de descida propulsada segue uma curva de frenagem a
   desaceleração constante até 15 m e depois desce a 1,5 m/s; o empuxo atende primeiro a vertical e
@@ -192,8 +223,11 @@ Inspirada nas salas de verdade: a faixa de relógios embaixo da barra de cima, c
 numéricos do MOCR do Apollo — GMT com o dia do ano, GET (tempo desde o lançamento, ou a
 contagem), o próximo evento com a contagem até ele e AOS/LOS (quanto falta para ganhar ou perder o
 sinal) —; o "programa de trabalho" no telão, como o do TsUP de Moscou; e o menu 🖥 (Tela), com o
-telão, a janela nova para outro monitor, a faixa de relógios e o visual: moderno, fósforo verde
-(os consoles do Apollo) ou âmbar (os terminais dos anos 70 e 80), com linhas de varredura.
+telão, a janela nova para outro monitor, a faixa de relógios e o visual, escolhido por cartões
+com a amostra das cores: moderno; claro, para a sala iluminada; automático, que segue o claro ou
+escuro do sistema; fósforo verde (os consoles do Apollo) ou âmbar (os terminais dos anos 70 e 80),
+com linhas de varredura; noite, só em vermelho e com pouca luz (as telas e gráficos também), para
+não ofuscar quem está no escuro; e alto contraste, preto e branco com bordas grossas.
 
 O botão 🔇 da barra de cima (ou a tecla `m`) liga o som de cada tela: o alarme mestre (dois tons
 enquanto houver alarme vermelho não reconhecido; "Silenciar" cala só aquela tela até o próximo), um
