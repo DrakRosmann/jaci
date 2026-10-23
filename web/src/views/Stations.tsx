@@ -5,6 +5,7 @@ import { t, tx } from '../lib/i18n'
 import { distance, duration, num, rate, utc } from '../lib/format'
 import { store, useStore } from '../lib/store'
 import type { Pass, Station, Vehicle } from '../types'
+import { RealSatellites } from './RealSatellites'
 
 const A = 6378137
 const F = 1 / 298.257223563
@@ -56,7 +57,9 @@ export function Stations() {
           <MapView height={380} />
         </Panel>
         <Panel title={t('Enlace atual')}>
-          {!v?.systems ? (
+          {v?.kind === 'tracked' ? (
+            <Visibility v={v} stations={hello.stations} snap={snap} />
+          ) : !v?.systems ? (
             <span className="muted">{t('Sem rádio.')}</span>
           ) : link ? (
             <div className="tiles">
@@ -147,6 +150,24 @@ export function Stations() {
           )}
         </Panel>
       </div>
+      <RealSatellites />
+    </div>
+  )
+}
+
+/** Satélite real (sem rádio simulado): de quais estações ele está à vista agora. */
+function Visibility({ v, stations, snap }: { v: Vehicle; stations: Station[]; snap: { gmst: number; bodies: { id: string; r: [number, number, number] }[] } }) {
+  const seen = stations
+    .filter((st) => !st.deep_space)
+    .map((st) => ({ st, la: look(st, v, snap) }))
+    .filter((x) => x.la && x.la.el >= x.st.min_el)
+    .sort((a, b) => b.la!.el - a.la!.el)
+  if (seen.length === 0) return <span className="muted">{t('Fora da vista de todas as estações agora.')}</span>
+  return (
+    <div className="tiles">
+      {seen.map(({ st, la }) => (
+        <Tile key={st.id} label={tx(st.name)} value={`${num(la!.el, 1)}°`} unit={`az ${num(la!.az, 0)}°`} state="nominal" title={distance(la!.range / 1000)} />
+      ))}
     </div>
   )
 }

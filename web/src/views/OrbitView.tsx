@@ -2,7 +2,7 @@ import { Suspense, lazy, useState } from 'react'
 import { KspAttitude, KspManeuvers } from './Ksp'
 import { CmdButton, Empty, Panel, Tm, sendCommand, toast } from '../components/ui'
 import { t, tx } from '../lib/i18n'
-import { duration, latlon, num } from '../lib/format'
+import { duration, latlon, num, utc } from '../lib/format'
 import { usePrediction } from '../lib/hooks'
 import { store, useStore } from '../lib/store'
 import type { Plan, Vehicle } from '../types'
@@ -39,10 +39,12 @@ export function OrbitView() {
             <Tm v={v} id="nav.dv" digits={0} />
             <Tm v={v} id="nav.mass" digits={3} />
           </div>
-          {v.kind !== 'ksp' && <AttitudeButtons v={v} />}
+          {v.kind !== 'ksp' && v.kind !== 'tracked' && <AttitudeButtons v={v} />}
         </Panel>
       </div>
-      {v.kind === 'ksp' ? (
+      {v.kind === 'tracked' ? (
+        <TlePanel v={v} />
+      ) : v.kind === 'ksp' ? (
         <div className="grid cols-3">
           <KspManeuvers v={v} />
           <KspAttitude v={v} />
@@ -55,6 +57,25 @@ export function OrbitView() {
         </div>
       )}
     </div>
+  )
+}
+
+/** Satélite real: os elementos em uso, sem planejador (não há o que comandar). */
+function TlePanel({ v }: { v: Vehicle }) {
+  const tle = v.tle
+  if (!tle) return null
+  return (
+    <Panel title={`${t('Elementos NORAD (TLE)')} · ${v.name}`}>
+      <pre className="mono small" style={{ margin: 0, overflowX: 'auto' }}>
+        {tle.line1}
+        {'\n'}
+        {tle.line2}
+      </pre>
+      <p className="small muted">
+        NORAD {tle.norad} · {t('época')} {tle.epoch != null ? utc(tle.epoch) : '—'} · {num(tle.age, 1)} {t('dias')}.{' '}
+        {t('Satélite real: só acompanhamento, sem comandos. Atualize os elementos no console de estações de solo (INCO).')}
+      </p>
+    </Panel>
   )
 }
 

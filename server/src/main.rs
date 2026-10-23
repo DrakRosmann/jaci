@@ -106,6 +106,8 @@ pub struct App {
     /// Ligação com o KSP (kOS), se ativa.
     pub ksp: Option<ksp::KspLink>,
     pub recordings_dir: PathBuf,
+    /// Lista dos satélites reais (TLE), guardada a cada mudança e lida ao iniciar.
+    pub satellites_file: PathBuf,
     /// Gravação em andamento.
     pub recorder: Option<recording::Recorder>,
     /// Reprodução de uma gravação: a simulação fica parada enquanto isso.
@@ -133,6 +135,27 @@ impl App {
         self.world.event(None, jaci_sim::vehicle::Level::Info, &msg);
         self.recorder = Some(rec);
         Ok(msg)
+    }
+
+    /// Guarda a lista de satélites reais.
+    fn save_satellites(&self) {
+        if let Some(dir) = self.satellites_file.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        if let Err(e) = std::fs::write(&self.satellites_file, jaci_sim::tracked::to_text(&self.world.tracked)) {
+            tracing::warn!("não guardei os satélites em {}: {e}", self.satellites_file.display());
+        }
+    }
+
+    /// Mundo novo (cenário ou estado): os satélites reais continuam na lista.
+    fn replace_world(&mut self, nw: World) {
+        let sats = std::mem::take(&mut self.world.tracked);
+        self.world = nw;
+        let have: Vec<u64> = self.world.tracked.iter().map(|s| s.norad).collect();
+        for s in sats.iter().filter(|s| !have.contains(&s.norad)) {
+            let _ = self.world.track(Some(&s.name), &s.line1, &s.line2);
+        }
+        self.sent_events = self.world.event_seq;
     }
 
     /// Termina a gravação em andamento, se houver.
@@ -241,8 +264,21 @@ async fn main() -> anyhow::Result<()> {
     };
     tracing::info!("cenário {} em {}", world.mission, format_utc(world.t));
     let states = states_dir(&args);
+    let mut world = world;
+    let satellites_file = states.with_file_name("satelites.tle");
+    if let Ok(text) = std::fs::read_to_string(&satellites_file) {
+        for (name, l1, l2) in jaci_sim::tracked::parse(&text) {
+            if let Err(e) = world.track(name.as_deref(), &l1, &l2) {
+                tracing::warn!("{e}");
+            }
+        }
+        if !world.tracked.is_empty() {
+            tracing::info!("{} satélite(s) real(is) de {}", world.tracked.len(), satellites_file.display());
+        }
+    }
     let app = Arc::new(Mutex::new(App {
         world,
+        satellites_file,
         recordings_dir: recordings_dir(&args, &states),
         recorder: None,
         replay: None,
@@ -607,6 +643,9 @@ fn handle(ctx: &Ctx, msg: &Value) -> Option<Value> {
             let cmd: Command = serde_json::from_value(msg.get("cmd")?.clone()).ok()?;
             let armed = msg.get("armed").and_then(|x| x.as_bool()).unwrap_or(false);
             let at = msg.get("at").and_then(|x| x.as_str()).and_then(parse_utc).or_else(|| msg.get("in").and_then(|x| x.as_f64()).map(|d| a.world.t + d));
+            if a.world.tracked.iter().any(|s| s.id == id) {
+                return Some(json!({"type": "command_result", "req": req, "ok": false, "error": "satélite real: só acompanhamento"}));
+            }
             // Nave do KSP: o comando vai para o kOS.
             let App { ksp, world, .. } = &mut *a;
             if let Some(link) = ksp.as_mut().filter(|l| l.vessel(id).is_some()) {
@@ -646,6 +685,9 @@ fn handle(ctx: &Ctx, msg: &Value) -> Option<Value> {
             let id = vid(msg);
             if a.ksp.as_ref().is_some_and(|l| l.vessel(id).is_some()) {
                 return Some(json!({"type": "plan", "req": req, "vehicle": id, "ok": false, "error": "nave do KSP: use os comandos de manobra do KSP"}));
+            }
+            if a.world.tracked.iter().any(|s| s.id == id) {
+                return Some(json!({"type": "plan", "req": req, "vehicle": id, "ok": false, "error": "satélite real: só acompanhamento"}));
             }
             let v = a.world.vehicle(id)?.clone();
             let p = msg.get("params").cloned().unwrap_or(json!({}));
@@ -697,12 +739,16 @@ fn handle(ctx: &Ctx, msg: &Value) -> Option<Value> {
                 return Some(json!({"type": "predict", "req": req, "vehicle": id, "central": central, "points": link.predict(id, a.world.t, span, step)}));
             }
             let pts: Vec<Value> = a.world.predict(id, span, step).into_iter().map(|(t, la, lo, al, r)| json!([t, la, lo, al / 1e3, r.x, r.y, r.z])).collect();
-            let central = a.world.vehicle(id).map(|v| v.central.id());
+            let central = a.world.vehicle(id).map(|v| v.central.id()).or_else(|| a.world.tracked.iter().any(|s| s.id == id).then_some("earth"));
             json!({"type": "predict", "req": req, "vehicle": id, "central": central, "points": pts})
         }
         "passes" => {
             let id = vid(msg);
             let span = msg.get("span").and_then(|x| x.as_f64()).unwrap_or(86_400.0).min(3.0 * 86_400.0);
+            if let Some(s) = a.world.tracked.iter().find(|s| s.id == id) {
+                let p = s.passes(&a.world.stations, a.world.t, span);
+                return Some(json!({"type": "passes", "req": req, "vehicle": id, "passes": p}));
+            }
             let v = a.world.vehicle(id)?.clone();
             let p = jaci_sim::ground::passes(&v, &a.world.stations, a.world.t, span);
             json!({"type": "passes", "req": req, "vehicle": id, "passes": p})
@@ -754,9 +800,7 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
             match scenarios::build(id, t, 2026) {
                 Some(nw) => {
                     a.stop_recording();
-                    let w = &mut a.world;
-                    *w = nw;
-                    a.sent_events = a.world.event_seq;
+                    a.replace_world(nw);
                     a.dict_sig.clear();
                     a.tc_routes.clear();
                     a.history.clear();
@@ -788,8 +832,7 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
             match std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|s| serde_json::from_str::<World>(&s).map_err(|e| e.to_string())) {
                 Ok(nw) => {
                     a.stop_recording();
-                    a.world = nw;
-                    a.sent_events = a.world.event_seq;
+                    a.replace_world(nw);
                     a.dict_sig.clear();
                     a.history.clear();
                     json!({"type": "reload", "req": req})
@@ -871,6 +914,38 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
             Some(Err(e)) => json!({"type": "sim_result", "req": req, "ok": false, "error": e.to_string()}),
             None => json!({"type": "sim_result", "req": req, "ok": false, "error": "KSP não ligado"}),
         },
+        "track" => {
+            let text = msg.get("value").and_then(|x| x.as_str()).unwrap_or("");
+            let found = jaci_sim::tracked::parse(text);
+            if found.is_empty() {
+                return json!({"type": "sim_result", "req": req, "ok": false, "error": "nenhum TLE no texto (linhas 1 e 2, com o nome antes)"});
+            }
+            let (mut ok, mut errors) = (0, Vec::new());
+            for (name, l1, l2) in &found {
+                match a.world.track(name.as_deref(), l1, l2) {
+                    Ok(_) => ok += 1,
+                    Err(e) => errors.push(e),
+                }
+            }
+            a.save_satellites();
+            a.dict_sig.clear();
+            if ok == 0 {
+                json!({"type": "sim_result", "req": req, "ok": false, "error": errors.join("; ")})
+            } else {
+                json!({"type": "sim_result", "req": req, "ok": true, "message": format!("{ok} satélite(s) acompanhado(s)"), "errors": errors})
+            }
+        }
+        "untrack" => {
+            let id = vid(msg);
+            if a.world.untrack(id) {
+                a.save_satellites();
+                a.dict_sig.clear();
+                a.history.remove(&id);
+                ok("satélite removido")
+            } else {
+                json!({"type": "sim_result", "req": req, "ok": false, "error": "satélite não encontrado"})
+            }
+        }
         "record_start" => match a.start_recording(msg.get("value").and_then(|x| x.as_str())) {
             Ok(m) => json!({"type": "sim_result", "req": req, "ok": true, "message": m}),
             Err(e) => json!({"type": "sim_result", "req": req, "ok": false, "error": e}),

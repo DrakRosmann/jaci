@@ -9,6 +9,7 @@ use crate::math::{Rng, Vec3};
 use crate::orbit::{propagate_kepler, rtn_to_inertial};
 use crate::subsystems::AttMode;
 use crate::telemetry::{self, LimitState};
+use crate::tracked::Tracked;
 use crate::vehicle::*;
 use serde::{Deserialize, Serialize};
 
@@ -136,6 +137,9 @@ pub struct World {
     pub next_periodic: f64,
     #[serde(default)]
     pub externals: Vec<External>,
+    /// Satélites reais acompanhados por TLE (SGP4).
+    #[serde(default)]
+    pub tracked: Vec<Tracked>,
 }
 
 impl World {
@@ -165,7 +169,32 @@ impl World {
             event_seq: 0,
             next_periodic: 0.0,
             externals: Vec::new(),
+            tracked: Vec::new(),
         }
+    }
+
+    /// Passa a acompanhar um satélite real pelo TLE; se o número NORAD já
+    /// estiver na lista, só troca os elementos (o id continua o mesmo).
+    pub fn track(&mut self, name: Option<&str>, line1: &str, line2: &str) -> Result<VehicleId, String> {
+        let mut s = Tracked::from_tle(0, name, line1, line2)?;
+        if let Some(old) = self.tracked.iter_mut().find(|x| x.norad == s.norad) {
+            s.id = old.id;
+            *old = s;
+            return Ok(old.id);
+        }
+        s.id = self.next_id;
+        self.next_id += 1;
+        let id = s.id;
+        self.event(Some(id), Level::Info, format!("Acompanhando {} (NORAD {})", s.name, s.norad));
+        self.tracked.push(s);
+        Ok(id)
+    }
+
+    /// Deixa de acompanhar um satélite real.
+    pub fn untrack(&mut self, id: VehicleId) -> bool {
+        let before = self.tracked.len();
+        self.tracked.retain(|s| s.id != id);
+        self.tracked.len() != before
     }
 
     /// Atualiza (ou cria) um veículo externo com um pacote de telemetria.
@@ -1457,6 +1486,16 @@ impl World {
     /// Posições futuras (para o traço no mapa): pontos (t, lat, lon, alt) e o
     /// estado inercial, por propagação de dois corpos com J2.
     pub fn predict(&self, vid: VehicleId, span: f64, step: f64) -> Vec<(f64, f64, f64, f64, Vec3)> {
+        if let Some(s) = self.tracked.iter().find(|s| s.id == vid) {
+            return s
+                .samples(self.t, span, step)
+                .into_iter()
+                .map(|(t, r)| {
+                    let (lat, lon, alt) = Body::Earth.to_geodetic(r, t);
+                    (t, lat, lon, alt, r)
+                })
+                .collect();
+        }
         let Some(v) = self.vehicle(vid) else { return vec![] };
         if v.phase.is_final() {
             return vec![];

@@ -41,6 +41,7 @@ const KIND_COLOR: Record<string, string> = {
   debris: '#5b6a88',
   external: '#3ddc84',
   ksp: '#a3e635',
+  tracked: '#f472b6',
 }
 
 /** Lugares conhecidos nos corpos do KSP. */

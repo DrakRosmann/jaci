@@ -104,7 +104,8 @@ os eventos, `l` troca a língua e `?` lista os atalhos (nenhum manda comando a v
 * **Telemetria e alarmes (TLM):** alarmes amarelos e vermelhos com reconhecimento; todos os pontos
   com valor, unidade e limites; gráfico dos pontos escolhidos.
 * **Estações de solo (INCO):** 17 estações (Alcântara, Natal, Cuiabá, Kourou, …, e a rede de espaço
-  profundo), visada ao vivo para o veículo, enlace atual e as passagens das próximas 24 h.
+  profundo), visada ao vivo para o veículo, enlace atual e as passagens das próximas 24 h; e os
+  satélites reais acompanhados por TLE (veja abaixo).
 * **Interplanetário (NAV):** porkchop (C3 de partida e v∞ de chegada) com clique para escolher a
   janela, vista do Sistema Solar com a sonda e a trajetória, distância e atraso da luz.
 * **Procedimentos (PROC):** listas de verificação que mandam comandos e esperam condições de
@@ -126,6 +127,16 @@ também mudam.
 | Cápsula recém-inserida a 210 km, no plano da estação, com o traço previsto e o ponto de queda do 1º estágio | Subida da cápsula: pressão dinâmica achatada pela redução de potência, corte do 1º estágio e malha fechada |
 | ![Órbita](docs/img/orbita.png) | ![Interplanetário](docs/img/interplanetario.png) |
 | Órbita em 3D e as queimas do encontro com a estação | Porkchop da janela de Marte de 2026 |
+
+## Satélites reais
+
+No console **Estações de solo (INCO)**, o painel "Satélites reais" busca os elementos NORAD (TLE) no
+[CelesTrak](https://celestrak.org/) — atalhos para a ISS, Tiangong, Hubble, Amazonia-1, CBERS-4 e
+4A, SCD-1 e 2, SGDC-1 e outros, ou qualquer número NORAD ou nome — ou aceita TLEs colados (sem
+internet). O servidor propaga cada um com o SGP4: aparecem no mapa, na vista 3D, na frota, nos
+gráficos e nas gravações como os simulados, com as passagens nas estações e a visada ao vivo, mas
+sem comandos. A idade do TLE vira um ponto de telemetria com alarme (o erro cresce alguns km por
+dia). A lista fica em `satelites.tle`, ao lado dos estados salvos, e continua ao trocar de cenário.
 
 ## Gravação e debriefing
 

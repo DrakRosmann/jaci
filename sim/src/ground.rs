@@ -255,11 +255,16 @@ pub fn passes(v: &Vehicle, stations: &[Station], t0: f64, span: f64) -> Vec<Pass
         return vec![];
     }
     let samples = propagate_samples(v.central, v.r, v.v, t0, span, 20.0);
+    passes_from_samples(&samples, stations, t0, span)
+}
+
+/// Passagens a partir de posições (t, r inercial na Terra) já calculadas.
+pub fn passes_from_samples(samples: &[(f64, Vec3)], stations: &[Station], t0: f64, span: f64) -> Vec<Pass> {
     let mut out = Vec::new();
     for st in stations.iter().filter(|s| s.enabled && !s.deep_space) {
         let mut in_pass: Option<(f64, f64, f64)> = None;
         let mut prev: Option<(f64, f64)> = None;
-        for &(t, r) in &samples {
+        for &(t, r) in samples {
             let (_, el, _) = look_angles(st, r, t);
             let up = el >= st.min_el;
             match (&mut in_pass, up) {

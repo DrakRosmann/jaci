@@ -18,7 +18,8 @@ let port = 28800
 async function server(scenario, extra = []) {
   const p = port++
   const states = mkdtempSync(join(tmpdir(), 'jaci-teste-'))
-  const proc = spawn(BIN, ['--addr', `127.0.0.1:${p}`, '--scenario', scenario, '--start', '2026-10-19 15:00:00', '--states-dir', states, '--web-dir', '/nao-existe', ...extra], { stdio: ['ignore', 'ignore', 'pipe'] })
+  const start = extra.includes('--start') ? [] : ['--start', '2026-10-19 15:00:00']
+  const proc = spawn(BIN, ['--addr', `127.0.0.1:${p}`, '--scenario', scenario, ...start, '--states-dir', states, '--web-dir', '/nao-existe', ...extra], { stdio: ['ignore', 'ignore', 'pipe'] })
   let log = ''
   proc.stderr.on('data', (d) => (log += d))
   for (let i = 0; i < 50; i++) {
@@ -293,6 +294,51 @@ const cases = [
       } finally {
         s.close()
         rmSync(recs, { recursive: true, force: true })
+      }
+    },
+  ],
+  [
+    'satélites reais: TLE, SGP4, passagens e lista guardada',
+    async () => {
+      const iss = `ISS (ZARYA)
+1 25544U 98067A   26294.04791053  .00009575  00000+0  18188-3 0  9996
+2 25544  51.6327  37.2623 0006759 289.5321  70.4938 15.48967427591263`
+      // Começa um dia depois da época do TLE, sem internet: o TLE vai colado.
+      const s = await server('sondagem', ['--start', '2026-10-22 01:00:00'])
+      try {
+        const c = s.ws
+        await until(c, 'instantâneo', (x) => x.vehicles.length > 0)
+        const bad = await c.request({ type: 'sim', action: 'track', value: 'nada aqui' })
+        assert(!bad.ok, 'aceitou texto sem TLE')
+        const r = await c.request({ type: 'sim', action: 'track', value: iss })
+        assert(r.ok, `track: ${r.error}`)
+        const snap = await until(c, 'ISS no instantâneo', (x) => x.vehicles.some((v) => v.kind === 'tracked'))
+        const sat = snap.vehicles.find((v) => v.kind === 'tracked')
+        assert(sat.tle.norad === 25544 && Math.abs(sat.alt - 420) < 30 && Math.abs(sat.inc - 51.6) < 0.3, `ISS: ${sat.alt} km, ${sat.inc}°`)
+        assert(sat.tm['tle.age'] > 0.5 && sat.tm['tle.age'] < 1.5, `idade ${sat.tm['tle.age']}`)
+        // De novo: atualiza, não duplica.
+        await c.request({ type: 'sim', action: 'track', value: iss })
+        await sleep(400)
+        assert(c.snap.vehicles.filter((v) => v.kind === 'tracked').length === 1, 'duplicou o satélite')
+        const p = await c.request({ type: 'passes', vehicle: sat.id, span: 86400 })
+        assert(p.passes.length > 5, `passagens: ${p.passes.length}`)
+        const pr = await c.request({ type: 'predict', vehicle: sat.id, span: 5600, step: 60 })
+        assert(pr.points.length > 80 && pr.central === 'earth', 'traço previsto')
+        const cmd = await c.request({ type: 'command', vehicle: sat.id, cmd: { id: 'tx', args: {} } })
+        assert(!cmd.ok, 'comando aceito para satélite real')
+        // Trocar de cenário mantém a lista.
+        const ld = await c.request({ type: 'sim', action: 'scenario', value: 'estacao', start: '2026-10-22 01:00:00' })
+        assert(ld.type === 'reload', 'cenário')
+        const c2 = await connect(s.port)
+        try {
+          await until(c2, 'ISS no cenário novo', (x) => x.vehicles.some((v) => v.kind === 'tracked' && v.tle.norad === 25544))
+          const rm = await c2.request({ type: 'sim', action: 'untrack', vehicle: c2.snap.vehicles.find((v) => v.kind === 'tracked').id })
+          assert(rm.ok, 'remover')
+        } finally {
+          c2.close()
+        }
+      } finally {
+        s.close()
       }
     },
   ],

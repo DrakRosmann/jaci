@@ -4,3 +4,4 @@ dist/
 *.log
 estados/
 gravacoes/
+satelites.tle

@@ -94,6 +94,11 @@ function Summary({ v }: { v: Vehicle }) {
         {v.systems && <span>{t('Atitude')}: {tx(v.systems.adcs.mode_name)}</span>}
         {v.crew > 0 && <span>{t('Tripulação')}: {v.crew}</span>}
         {v.attached_to != null && <span>{t('Acoplado a')} {store.vehicle(v.attached_to)?.name}</span>}
+        {v.tle && (
+          <span className={Math.abs(v.tle.age) > 7 ? 'warn' : ''}>
+            NORAD {v.tle.norad} · TLE {num(v.tle.age, 1)} {t('dias')}
+          </span>
+        )}
       </div>
       <div className="tiles">
         <Tile label={t('Tempo de missão')} value={met(v.met ?? null)} />

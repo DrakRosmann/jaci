@@ -60,6 +60,12 @@ fn dictionary_map(a: &App) -> Value {
         }
         m.insert(v.id.to_string(), json!(telemetry::defs(v)));
     }
+    if !w.tracked.is_empty() {
+        let defs = json!(jaci_sim::tracked::tm_defs());
+        for s in &w.tracked {
+            m.insert(s.id.to_string(), defs.clone());
+        }
+    }
     for e in &w.externals {
         let defs: Vec<Value> = jaci_sim::ccsds::NAV_POINTS
             .iter()
@@ -85,6 +91,9 @@ fn signature(a: &App) -> String {
     }
     for e in &w.externals {
         s.push_str(&format!("x{};", e.id));
+    }
+    for t in &w.tracked {
+        s.push_str(&format!("s{};", t.id));
     }
     s
 }
@@ -243,6 +252,30 @@ fn vehicle(w: &World, v: &Vehicle) -> Value {
     o
 }
 
+/// Satélite real (TLE + SGP4) no formato dos veículos.
+fn tracked(s: &jaci_sim::tracked::Tracked, t: f64) -> Option<Value> {
+    let Some(st) = s.state(t) else {
+        return Some(json!({
+            "id": s.id, "name": s.name, "kind": "tracked", "kind_name": "Satélite real (TLE)",
+            "phase": "destroyed", "phase_name": "SGP4 sem solução (reentrou ou TLE velho demais)",
+            "central": "earth", "lat": 0, "lon": 0, "alt": 0, "speed": 0, "crew": 0,
+            "tle": {"norad": s.norad, "line1": s.line1, "line2": s.line2, "epoch": s.epoch(), "age": s.age_days(t)},
+        }));
+    };
+    let el = &st.elements;
+    let re = Body::Earth.radius();
+    let tm: serde_json::Map<String, Value> = s.telemetry(&st, t).into_iter().map(|(k, x)| (k, num(x))).collect();
+    Some(json!({
+        "id": s.id, "name": s.name, "kind": "tracked", "kind_name": "Satélite real (TLE)",
+        "phase": "orbit", "phase_name": "Em órbita (SGP4)",
+        "central": "earth", "lat": st.lat, "lon": st.lon, "alt": st.alt / 1e3, "speed": st.v.norm(),
+        "r": v3(st.r), "v": v3(st.v),
+        "pe": num((el.periapsis() - re) / 1e3), "ap": num((el.apoapsis() - re) / 1e3), "inc": el.i.to_degrees(), "ecc": el.e,
+        "crew": 0, "tm": tm,
+        "tle": {"norad": s.norad, "line1": s.line1, "line2": s.line2, "epoch": s.epoch(), "age": s.age_days(t)},
+    }))
+}
+
 pub fn snapshot(a: &mut App) -> String {
     let v = snapshot_value(a, a.sent_events);
     a.sent_events = a.world.event_seq;
@@ -296,6 +329,7 @@ pub fn snapshot_value(a: &App, since: u64) -> Value {
         .collect();
     let mut vehicles: Vec<Value> = w.vehicles.iter().map(|v| vehicle(w, v)).collect();
     vehicles.extend(ext);
+    vehicles.extend(w.tracked.iter().filter_map(|s| tracked(s, w.t)));
     let ksp = a.ksp.as_ref().map(|l| {
         vehicles.extend(l.vessels.iter().map(|v| crate::ksp::vehicle_json(v, w.t)));
         json!({
@@ -348,7 +382,8 @@ pub fn record_history(a: &mut App) {
     let sim = a.world.vehicles.iter().filter(|v| v.kind != Kind::Debris && v.phase != jaci_sim::vehicle::Phase::Destroyed).map(|v| (v.id, telemetry::values(v, t)));
     // Naves do KSP só enquanto chega telemetria (o gráfico não repete o último valor).
     let game = a.ksp.iter().flat_map(|l| &l.vessels).filter(|v| v.age() < 5.0).map(|v| (v.id, v.tm.clone()));
-    let all: Vec<(u32, Vec<(String, f64)>)> = sim.chain(game).collect();
+    let real = a.world.tracked.iter().filter_map(|s| s.state(t).map(|st| (s.id, s.telemetry(&st, t))));
+    let all: Vec<(u32, Vec<(String, f64)>)> = sim.chain(game).chain(real).collect();
     for (id, vals) in all {
         let h = a.history.entry(id).or_default();
         if h.rows.back().is_some_and(|(last, _)| *last == t) {

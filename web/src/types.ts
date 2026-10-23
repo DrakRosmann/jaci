@@ -234,6 +234,8 @@ export interface Vehicle {
   central_radius?: number
   central_rotation?: number
   ksp?: KspVessel
+  /** Satélite real: os elementos NORAD em uso. */
+  tle?: { norad: number; line1: string; line2: string; epoch: number | null; age: number }
 }
 
 /** Nave do Kerbal Space Program, vista pelo kOS (server/src/ksp.rs). */
