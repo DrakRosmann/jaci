@@ -121,6 +121,13 @@ os eventos, `l` troca a língua e `?` lista os atalhos (nenhum manda comando a v
 A interface está em português e inglês (botão no canto); os textos do servidor que têm tradução
 também mudam.
 
+O botão 🔇 da barra de cima (ou a tecla `m`) liga o som de cada tela: o alarme mestre (dois tons
+enquanto houver alarme vermelho não reconhecido; "Silenciar" cala só aquela tela até o próximo), um
+aviso para os amarelos e a locução da contagem ("T menos 30 segundos", "10, 9, …", "Decolagem",
+"Espera"), pela voz do próprio navegador, em português ou inglês; sem voz instalada, a contagem
+vira bipes. Opcionalmente, também a locução dos alarmes e dos eventos importantes. A contagem só é
+falada em tempo real (até 2×), na missão ou na reprodução.
+
 | | |
 |---|---|
 | ![Visão geral](docs/img/visao-geral.png) | ![Subida](docs/img/subida.png) |

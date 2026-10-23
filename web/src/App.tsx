@@ -4,7 +4,8 @@ import { EventLog } from './components/EventLog'
 import { TopBar } from './components/TopBar'
 import { ReplayBar } from './components/ReplayBar'
 import { Shortcuts } from './components/Shortcuts'
-import { t } from './lib/i18n'
+import { sound } from './lib/audio'
+import { t, tx } from './lib/i18n'
 import { utc } from './lib/format'
 import { CONSOLES, CONSOLE_KEYS, WARPS } from './lib/consoles'
 import { store, useStore, type View } from './lib/store'
@@ -56,6 +57,7 @@ export default function App() {
   const [help, setHelp] = useState(false)
   useTitle()
   useKeys(setHelp)
+  useSound()
   useEffect(() => {
     document.documentElement.lang = lang === 'en' ? 'en' : 'pt-BR'
   }, [lang])
@@ -158,6 +160,33 @@ class ViewBoundary extends Component<{ children: ReactNode }, { error: Error | n
   }
 }
 
+/** Liga os sons aos instantâneos e destrava o áudio no primeiro clique. */
+function useSound() {
+  useEffect(() => {
+    let last: typeof store.snap = null
+    const off = store.subscribe(() => {
+      const s = store.snap
+      if (!s) {
+        if (last) sound.reset()
+        last = null
+        return
+      }
+      if (s === last) return
+      last = s
+      sound.update(s, s.events, store.ui.lang, tx)
+    })
+    const unlock = () => sound.prefs.on && sound.unlock()
+    window.addEventListener('pointerdown', unlock)
+    window.addEventListener('keydown', unlock)
+    return () => {
+      off()
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+      sound.stopAlarm()
+    }
+  }, [])
+}
+
 /** Título da aba: alarmes e contagem, para ver de outra janela. */
 function useTitle() {
   const alarms = useStore((s) => s.snap?.alarms.filter((a) => !a.acked && a.active).length ?? 0)
@@ -193,6 +222,8 @@ function useKeys(setHelp: (b: boolean) => void) {
         store.sim('warp', { value: next })
       } else if (e.key === 'e') {
         store.setUi({ eventsOpen: !store.ui.eventsOpen })
+      } else if (e.key === 'm') {
+        sound.setPrefs({ on: !sound.prefs.on })
       } else if (e.key === 'l') {
         store.setUi({ lang: store.ui.lang === 'pt' ? 'en' : 'pt' })
       } else if (e.key === '?') {

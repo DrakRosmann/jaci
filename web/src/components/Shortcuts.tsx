@@ -14,6 +14,7 @@ export function Shortcuts({ onClose }: { onClose: () => void }) {
     [t('espaço'), t('Pausar ou continuar a simulação')],
     ['[  ]', t('Diminuir ou aumentar a aceleração do tempo')],
     ['e', t('Mostrar ou esconder os eventos')],
+    ['m', t('Ligar ou desligar o som')],
     ['l', 'Português / English'],
     ['?', t('Esta ajuda')],
     ['Esc', t('Fechar')],

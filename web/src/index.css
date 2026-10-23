@@ -145,6 +145,35 @@ a.button:hover {
   animation: pulse 0.9s ease-in-out infinite alternate;
 }
 
+.sound {
+  position: relative;
+  display: flex;
+  gap: 4px;
+}
+.sound .menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 250px;
+  box-shadow: 0 8px 30px #000b;
+}
+.sound .menu label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.sound .menu input[type='range'] {
+  flex: 1;
+}
+
 .replay-bar {
   display: flex;
   align-items: center;

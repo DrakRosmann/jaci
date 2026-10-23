@@ -1200,4 +1200,18 @@ export const EN: Record<string, string> = {
   'Acompanhando': 'Tracking',
   'Elementos': 'Elements',
   'Fora da vista de todas as estações agora.': 'Out of view of every station right now.',
+
+  // ── Som ──
+  'Silencia o alarme mestre nesta tela até chegar outro alarme vermelho (não reconhece o alarme)': 'Silences the master alarm on this screen until another red alarm arrives (does not acknowledge it)',
+  'Silenciar': 'Silence',
+  'Som': 'Sound',
+  'Som ligado': 'Sound on',
+  'Alarme mestre e avisos': 'Master alarm and cautions',
+  'Locução da contagem': 'Countdown callouts',
+  'Locução dos alarmes e eventos': 'Spoken alarms and events',
+  'Volume': 'Volume',
+  'Testar aviso': 'Test caution',
+  'Testar voz': 'Test voice',
+  'Sem vozes de síntese no sistema: a contagem vira bipes.': 'No speech voices on this system: the countdown uses beeps.',
+  'Ligar ou desligar o som': 'Turn sound on or off',
 }

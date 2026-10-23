@@ -1,6 +1,7 @@
 import { t, tx } from '../lib/i18n'
 import { kerbinTime, met } from '../lib/format'
 import { WARPS } from '../lib/consoles'
+import { SoundMenu } from './SoundMenu'
 import { store, useStore } from '../lib/store'
 
 export function TopBar({ onHelp }: { onHelp: () => void }) {
@@ -87,6 +88,7 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
       <button className={`small ${alarms.length ? (red ? 'danger' : '') : ''}`} onClick={() => store.setUi({ view: 'telemetry' })} title={t('Alarmes não reconhecidos')}>
         <span className={`dot ${alarms.length ? (red ? 'bad' : 'warn') : 'good'}`} /> {alarms.length} {t('alarmes')}
       </button>
+      <SoundMenu />
       <span title={connected ? t('Conectado') : t('Sem conexão')} role="status" aria-label={connected ? t('Conectado') : t('Sem conexão')}>
         <span className={`dot ${connected ? 'good' : 'bad'}`} />
       </span>
