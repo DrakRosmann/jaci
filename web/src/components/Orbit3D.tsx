@@ -63,13 +63,108 @@ function basicMaterial(color: number | string): THREE.MeshBasicMaterial {
   return m
 }
 
+/** Textura equirretangular do corpo, desenhada na hora (sem baixar imagens). */
+const textures = new Map<string, THREE.CanvasTexture>()
+function bodyTexture(central: string): THREE.CanvasTexture | null {
+  const key = `${central}:${land ? 1 : 0}`
+  const hit = textures.get(key)
+  if (hit) return hit
+  const W = 2048
+  const H = 1024
+  const c = document.createElement('canvas')
+  c.width = W
+  c.height = H
+  const g = c.getContext('2d')
+  if (!g) return null
+  const X = (lon: number) => ((lon + 180) / 360) * W
+  const Y = (lat: number) => ((90 - lat) / 180) * H
+  let seed = 7
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+  if (central === 'earth') {
+    const sea = g.createLinearGradient(0, 0, 0, H)
+    sea.addColorStop(0, '#0b2f5c')
+    sea.addColorStop(0.5, '#0e4a8a')
+    sea.addColorStop(1, '#0b2f5c')
+    g.fillStyle = sea
+    g.fillRect(0, 0, W, H)
+    if (!land) return null
+    for (const ring of land) {
+      const lat0 = ring.reduce((m, p) => m + p[1], 0) / ring.length
+      g.fillStyle = lat0 < -60 ? '#dfe8f0' : lat0 > 60 ? '#5d7a52' : Math.abs(lat0) < 30 ? '#4a6b2e' : '#56703a'
+      g.strokeStyle = '#9fb88a'
+      g.lineWidth = 1
+      g.beginPath()
+      ring.forEach(([lo, la], i) => (i ? g.lineTo(X(lo), Y(la)) : g.moveTo(X(lo), Y(la))))
+      g.closePath()
+      g.fill()
+      g.stroke()
+    }
+    // Calotas de gelo e um pouco de deserto nos subtrópicos.
+    g.fillStyle = '#e8eef5'
+    g.fillRect(0, 0, W, Y(80))
+    g.fillRect(0, Y(-72), W, H - Y(-72))
+  } else {
+    const base: Record<string, [string, string]> = { moon: ['#8a8a8a', '#5c5c5c'], mars: ['#b5532d', '#7a3218'], mercury: ['#7d756d', '#55504a'], venus: ['#d9b77a', '#b08d4f'] }
+    const [a, b] = base[central] ?? ['#667788', '#445566']
+    g.fillStyle = a
+    g.fillRect(0, 0, W, H)
+    // Manchas e crateras procedurais.
+    for (let i = 0; i < (central === 'moon' || central === 'mercury' ? 900 : 260); i++) {
+      const r = (central === 'mars' ? 40 : 6) + rnd() ** 3 * (central === 'mars' ? 220 : 60)
+      g.fillStyle = b
+      g.globalAlpha = 0.15 + rnd() * 0.35
+      g.beginPath()
+      g.ellipse(rnd() * W, rnd() * H, r, r * (0.6 + rnd() * 0.4), 0, 0, Math.PI * 2)
+      g.fill()
+    }
+    g.globalAlpha = 1
+    if (central === 'mars') {
+      g.fillStyle = '#f2ece4'
+      g.fillRect(0, 0, W, Y(83))
+      g.fillRect(0, Y(-80), W, H - Y(-80))
+    }
+  }
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.anisotropy = 4
+  textures.set(key, tex)
+  return tex
+}
+
+/** Etiqueta com o nome (sprite que não muda de tamanho com a distância). */
+const labels = new Map<string, THREE.SpriteMaterial>()
+function label(text: string, color: string): THREE.Sprite {
+  const key = `${text}|${color}`
+  let mat = labels.get(key)
+  if (!mat) {
+    const c = document.createElement('canvas')
+    const g = c.getContext('2d')!
+    g.font = '28px system-ui, sans-serif'
+    c.width = Math.ceil(g.measureText(text).width) + 16
+    c.height = 40
+    g.font = '28px system-ui, sans-serif'
+    g.fillStyle = color
+    g.fillText(text, 8, 29)
+    const tex = new THREE.CanvasTexture(c)
+    mat = new THREE.SpriteMaterial({ map: tex, sizeAttenuation: false, depthTest: false, transparent: true })
+    labels.set(key, mat)
+  }
+  const s = new THREE.Sprite(mat)
+  const img = mat.map!.image as HTMLCanvasElement
+  s.scale.set((0.045 * img.width) / img.height, 0.045, 1)
+  s.center.set(-0.08, 0.5)
+  s.renderOrder = 10
+  return s
+}
+
 /** Esvazia um grupo liberando a memória de vídeo do que não é compartilhado. */
 function clearGroup(g: THREE.Group) {
   for (const o of g.children) {
     const m = o as THREE.Mesh
     if (m.geometry && m.geometry !== MARKER && m.geometry !== NODE) m.geometry.dispose()
     const mats = Array.isArray(m.material) ? m.material : m.material ? [m.material] : []
-    for (const mat of mats) if (![...basic.values()].includes(mat as THREE.MeshBasicMaterial)) mat.dispose()
+    for (const mat of mats) if (![...basic.values()].includes(mat as THREE.MeshBasicMaterial) && !(mat instanceof THREE.SpriteMaterial) && !((mat as THREE.MeshPhongMaterial).map && [...textures.values()].includes((mat as THREE.MeshPhongMaterial).map as THREE.CanvasTexture))) mat.dispose()
+    if (o.children.length) clearGroup(o as THREE.Group)
   }
   g.clear()
 }
@@ -96,6 +191,7 @@ export function Orbit3D({ vehicle, prediction, others = [], height = 420 }: Prop
   const hello = useStore((s) => s.hello)
   const [landReady, setLandReady] = useState(land != null)
   const [noGl, setNoGl] = useState(false)
+  const [follow, setFollow] = useState(false)
 
   useEffect(() => {
     const el = mount.current!
@@ -196,9 +292,25 @@ export function Orbit3D({ vehicle, prediction, others = [], height = 420 }: Prop
     clearGroup(th.body)
     th.central = central
     th.radius = radius
-    const sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 48), new THREE.MeshPhongMaterial({ color: BODY_COLOR[central] ?? 0x445566, shininess: 8 }))
+    const tex = bodyTexture(central)
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 96, 64),
+      tex ? new THREE.MeshPhongMaterial({ map: tex, shininess: central === 'earth' ? 18 : 2, specular: central === 'earth' ? 0x223344 : 0x000000 }) : new THREE.MeshPhongMaterial({ color: BODY_COLOR[central] ?? 0x445566, shininess: 8 }),
+    )
     th.body.add(sphere)
-    if (central === 'earth' && land) {
+    // Atmosfera: um brilho fino em volta (Terra e Marte).
+    if (central === 'earth' || central === 'mars' || central === 'kerbin') {
+      const atm = new THREE.Mesh(
+        new THREE.SphereGeometry(1.025, 64, 48),
+        new THREE.MeshBasicMaterial({ color: central === 'mars' ? 0xd98a5a : 0x5aa8ff, transparent: true, opacity: 0.13, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false }),
+      )
+      th.body.add(atm)
+    }
+    // Traço no solo: gira junto com o corpo.
+    const ground = new THREE.Group()
+    ground.name = 'groundtrack'
+    th.body.add(ground)
+    if (central === 'earth' && land && !tex) {
       const mat = new THREE.LineBasicMaterial({ color: 0x7fb0ff })
       for (const ring of land) {
         const pts = ring.map(([lo, la]) => {
@@ -233,6 +345,28 @@ export function Orbit3D({ vehicle, prediction, others = [], height = 420 }: Prop
     }
     line(prediction, 0x4cc3ff)
     for (const o of others) line(o.points, o.color, 0.6)
+    // Traço no solo (latitude e longitude da previsão, no corpo que gira).
+    const ground = th.body.getObjectByName('groundtrack') as THREE.Group | undefined
+    if (ground) {
+      clearGroup(ground)
+      if (central === 'earth' && prediction.length > 1) {
+        const pts = prediction.map((p) => {
+          const a = (p[1] * Math.PI) / 180
+          const b = (p[2] * Math.PI) / 180
+          return new THREE.Vector3(Math.cos(a) * Math.cos(b), Math.sin(a), -Math.cos(a) * Math.sin(b)).multiplyScalar(1.004)
+        })
+        // Quebra onde a longitude dá a volta.
+        let seg: THREE.Vector3[] = []
+        for (let i = 0; i < pts.length; i++) {
+          if (i > 0 && Math.abs(prediction[i][2] - prediction[i - 1][2]) > 180) {
+            if (seg.length > 1) ground.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(seg), new THREE.LineBasicMaterial({ color: 0xffc23d, transparent: true, opacity: 0.8 })))
+            seg = []
+          }
+          seg.push(pts[i])
+        }
+        if (seg.length > 1) ground.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(seg), new THREE.LineBasicMaterial({ color: 0xffc23d, transparent: true, opacity: 0.8 })))
+      }
+    }
     // Queimas planejadas: um marcador no ponto previsto mais próximo.
     for (const n of nodes) {
       const p = prediction.reduce<PredPoint | null>((best, q) => (best == null || Math.abs(q[0] - n.t) < Math.abs(best[0] - n.t) ? q : best), null)
@@ -259,8 +393,17 @@ export function Orbit3D({ vehicle, prediction, others = [], height = 420 }: Prop
       m.scale.setScalar(x.id === vehicle ? 0.035 : 0.022)
       m.position.copy(toThree(x.r[0], x.r[1], x.r[2], R))
       th.dyn.add(m)
+      const tag = label(x.name, x.id === vehicle ? '#ffffff' : kindColor(x.kind))
+      tag.position.copy(m.position)
+      th.dyn.add(tag)
+      // Câmera seguindo a nave selecionada: anda junto, mantendo o ângulo.
+      if (x.id === vehicle && follow) {
+        const delta = m.position.clone().sub(th.controls.target)
+        th.controls.target.add(delta)
+        th.camera.position.add(delta)
+      }
     }
-  }, [snap, vehicle, central])
+  }, [snap, vehicle, central, follow])
 
   // Enquadra a órbita quando muda de veículo ou de corpo: olha de cima do plano,
   // um pouco inclinado, e afasta até caber.
@@ -281,7 +424,12 @@ export function Orbit3D({ vehicle, prediction, others = [], height = 420 }: Prop
   }, [vehicle, central, prediction.length > 2])
 
   return (
-    <div ref={mount} style={{ width: '100%', height }} role="img" aria-label={t('Vista 3D da órbita')}>
+    <div ref={mount} style={{ width: '100%', height, position: 'relative' }} role="img" aria-label={t('Vista 3D da órbita')}>
+      {!noGl && (
+        <label className="o3d-follow small">
+          <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> {t('seguir a nave')}
+        </label>
+      )}
       {noGl && <div className="loading muted" style={{ height }}>{t('Sem WebGL neste navegador: a vista 3D não está disponível.')}</div>}
     </div>
   )

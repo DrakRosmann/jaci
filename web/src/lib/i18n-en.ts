@@ -1511,4 +1511,5 @@ export const EN: Record<string, string> = {
   'Tela: telão, janela nova, visual e relógios': 'Screen: wall display, new window, look and clocks',
   'Janela nova': 'New window',
   'SEM ÓRBITA': 'NO ORBIT',
+  'seguir a nave': 'follow the spacecraft',
 }

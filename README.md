@@ -111,7 +111,10 @@ sequência automática de ativação de satélite.
   aceleração; cada motor com estado, empuxo, pressão de câmara, potência, ignições e tempo de queima;
   guiamento (malha aberta/fechada, órbita alvo, azimute, tempo para o corte); escudo térmico,
   fluxo de calor, ablação, rolamento, paraquedas e alvo de pouso.
-* **Órbita e manobras (FIDO):** vista 3D com o corpo central girando, a órbita prevista e as queimas;
+* **Órbita e manobras (FIDO):** vista 3D com o corpo central girando — a Terra com oceanos,
+  continentes, gelo e atmosfera, a Lua e Marte com relevo, desenhados na hora —, a órbita
+  prevista, o traço no solo sobre o globo, as queimas, o nome de cada veículo e a câmera que
+  pode seguir a nave;
   elementos orbitais; planejador (circularizar, Hohmann, apoastro, periastro, inclinação, igualar
   plano, encontro por Lambert, saída de órbita mirando o local de pouso, injeção para outro corpo,
   correção de trajetória, captura); fila de queimas; queima manual em RTN; modos de atitude.

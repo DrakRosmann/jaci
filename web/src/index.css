@@ -1770,3 +1770,12 @@ tr.sel td {
 .vehicle-select {
   max-width: 230px;
 }
+.o3d-follow {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  z-index: 2;
+  background: #000a;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
