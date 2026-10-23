@@ -312,23 +312,84 @@ fn states_dir(args: &Args) -> PathBuf {
     data.join("jaci/estados")
 }
 
-/// Missões em arquivos: a pedida ou a pasta irmã da dos estados salvos. Na
-/// primeira vez, instalado, copia os exemplos que vêm com o Jaci.
+/// Missões em arquivos: a pedida ou a pasta irmã da dos estados salvos.
+/// Instalado, oferece os exemplos que vêm com o Jaci: copia os que ainda não
+/// foram oferecidos (lista em `.exemplos`), sem sobrescrever nada do usuário;
+/// um exemplo apagado não volta.
 fn missions_dir(args: &Args, states: &std::path::Path) -> PathBuf {
     let dir = args.missions_dir.clone().unwrap_or_else(|| states.with_file_name("missoes"));
-    if !dir.exists() {
-        let examples = std::env::current_exe().ok().and_then(|e| e.parent()?.parent().map(|p| p.join("share/jaci/exemplos/missoes")));
-        if let Some(src) = examples.filter(|d| d.is_dir()) {
-            for sub in jaci_sim::library::KINDS.iter().map(|(k, _)| *k).chain(["scripts", "ccsds"]) {
-                let _ = std::fs::create_dir_all(dir.join(sub));
-                for f in std::fs::read_dir(src.join(sub)).into_iter().flatten().flatten() {
-                    let _ = std::fs::copy(f.path(), dir.join(sub).join(f.file_name()));
-                }
-            }
-            let _ = std::fs::copy(src.join("LEIAME.md"), dir.join("LEIAME.md"));
-        }
+    let examples = std::env::current_exe().ok().and_then(|e| e.parent()?.parent().map(|p| p.join("share/jaci/exemplos/missoes")));
+    if let Some(src) = examples.filter(|d| d.is_dir()) {
+        offer_examples(&src, &dir);
     }
     dir
+}
+
+fn offer_examples(src: &std::path::Path, dir: &std::path::Path) {
+    let list = dir.join(".exemplos");
+    let first = !dir.exists();
+    let mut offered: Vec<String> = std::fs::read_to_string(&list).unwrap_or_default().lines().map(str::to_string).collect();
+    // Instalação de antes da lista: copia só o que falta (o que existe fica).
+    let mut files = vec!["LEIAME.md".to_string()];
+    for sub in jaci_sim::library::KINDS.iter().map(|(k, _)| *k).chain(["scripts", "ccsds"]) {
+        let mut names: Vec<String> = std::fs::read_dir(src.join(sub)).into_iter().flatten().flatten().map(|f| format!("{sub}/{}", f.file_name().to_string_lossy())).collect();
+        names.sort();
+        files.extend(names);
+    }
+    let mut changed = false;
+    for rel in files {
+        if offered.contains(&rel) {
+            continue;
+        }
+        let to = dir.join(&rel);
+        if !to.exists() {
+            if let Some(parent) = to.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if std::fs::copy(src.join(&rel), &to).is_ok() && !first {
+                tracing::info!("exemplo novo em {}", to.display());
+            }
+        }
+        offered.push(rel);
+        changed = true;
+    }
+    if changed {
+        let _ = std::fs::write(&list, offered.join("\n") + "\n");
+    }
+}
+
+#[cfg(test)]
+mod tests_exemplos {
+    use super::offer_examples;
+
+    #[test]
+    fn exemplos_novos_chegam_e_os_apagados_nao_voltam() {
+        let base = std::env::temp_dir().join(format!("jaci-exemplos-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (src, dir) = (base.join("src"), base.join("missoes"));
+        std::fs::create_dir_all(src.join("veiculos")).unwrap();
+        std::fs::write(src.join("LEIAME.md"), "leia").unwrap();
+        std::fs::write(src.join("veiculos/a.toml"), "a").unwrap();
+        // Primeira vez: copia tudo.
+        offer_examples(&src, &dir);
+        assert!(dir.join("veiculos/a.toml").exists());
+        // O usuário apaga um e edita outro; chega um exemplo novo.
+        std::fs::remove_file(dir.join("veiculos/a.toml")).unwrap();
+        std::fs::write(dir.join("LEIAME.md"), "meu").unwrap();
+        std::fs::create_dir_all(src.join("escola")).unwrap();
+        std::fs::write(src.join("escola/01.toml"), "licao").unwrap();
+        offer_examples(&src, &dir);
+        assert!(!dir.join("veiculos/a.toml").exists(), "o apagado voltou");
+        assert_eq!(std::fs::read_to_string(dir.join("LEIAME.md")).unwrap(), "meu");
+        assert_eq!(std::fs::read_to_string(dir.join("escola/01.toml")).unwrap(), "licao");
+        // Instalação antiga, sem a lista: o que falta chega, o que existe fica.
+        std::fs::remove_file(dir.join(".exemplos")).unwrap();
+        std::fs::remove_file(dir.join("escola/01.toml")).unwrap();
+        offer_examples(&src, &dir);
+        assert!(dir.join("escola/01.toml").exists());
+        assert_eq!(std::fs::read_to_string(dir.join("LEIAME.md")).unwrap(), "meu");
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }
 
 /// Lê os dicionários XTCE de uma pasta: os pacotes e os arquivos com erro.
