@@ -311,7 +311,7 @@ fn states_dir(args: &Args) -> PathBuf {
 fn missions_dir(args: &Args, states: &std::path::Path) -> PathBuf {
     let dir = args.missions_dir.clone().unwrap_or_else(|| states.with_file_name("missoes"));
     if !dir.exists() {
-        let examples = std::env::current_exe().ok().and_then(|e| e.parent()?.parent().map(|p| p.join("share/jaci/missoes")));
+        let examples = std::env::current_exe().ok().and_then(|e| e.parent()?.parent().map(|p| p.join("share/jaci/exemplos/missoes")));
         if let Some(src) = examples.filter(|d| d.is_dir()) {
             for sub in jaci_sim::library::KINDS.iter().map(|(k, _)| *k).chain(["scripts", "ccsds"]) {
                 let _ = std::fs::create_dir_all(dir.join(sub));
