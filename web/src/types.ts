@@ -270,6 +270,10 @@ export interface Vehicle {
     kick_wait: boolean
     ascent: { pe: number; ap: number; inc: number } | null
     azimuth: number | null
+    /** Pilotagem manual com diretor de voo (CSS). */
+    manual?: boolean
+    /** Para onde o guiamento quer o nariz (inercial, unitário). */
+    director?: [number, number, number] | null
   }
   fts?: { installed: boolean; armed: boolean; autonomous: boolean }
   aborts?: [string, boolean][]
@@ -281,6 +285,8 @@ export interface Vehicle {
   packets?: number
   age?: number
   central_name?: string
+  /** Velocidade em relação à superfície que gira (m/s, inercial). */
+  v_surf?: [number, number, number]
   central_radius?: number
   central_rotation?: number
   ksp?: KspVessel

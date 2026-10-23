@@ -10,10 +10,13 @@ import { t, tx } from '../lib/i18n'
 import { distance, duration, num, utc } from '../lib/format'
 import { usePrediction } from '../lib/hooks'
 import { add, norm, type V3 } from '../lib/attitude'
-import { AU, PLANETS, hohmannWindow, lambert, orbitPath, planetPosition, planetVelocity, transferArc, type Window } from '../lib/ephem'
-import { nextNode } from '../lib/mfd'
+import { AU, PLANETS, flybyArcs, hohmannWindow, lambert, orbitPath, planetPosition, planetVelocity, transferArc, type Window } from '../lib/ephem'
+import { MU, nextNode } from '../lib/mfd'
+import { elements } from '../lib/attitude'
 import { store, useStore } from '../lib/store'
 import { Planner, type PlannerPreset } from './OrbitView'
+import { FlybyDiagram, FlybyPanel, type FlybyPick } from './Flyby'
+import type { Vehicle } from '../types'
 
 interface Porkchop {
   from: string
@@ -25,7 +28,7 @@ interface Porkchop {
   best: [number, number, number, number] | null
 }
 
-type Metric = 'c3' | 'vinf' | 'total'
+type Metric = 'c3' | 'vinf' | 'total' | 'dv'
 
 interface Pick {
   dep: number
@@ -57,6 +60,9 @@ export function Interplanetary() {
   const [metric, setMetric] = useState<Metric>('c3')
   const [pick, setPick] = useState<Pick | null>(null)
   const [preset, setPreset] = useState<PlannerPreset>()
+  // Partir da órbita de verdade da sonda (quando ela está no planeta de origem).
+  const [fromProbe, setFromProbe] = useState(true)
+  const [flyby, setFlyby] = useState<FlybyPick | null>(null)
   const heliospan = v?.central === 'sun' ? 86_400 * 400 : 86_400 * 30
   const pred = usePrediction(v && v.kind === 'probe' ? v.id : null, heliospan, 8000, heliospan / 300)
   const run = async (f = form) => {
@@ -120,12 +126,14 @@ export function Interplanetary() {
     setPreset({ kind: 'injection', params: { depart_in_h: String(Math.round((pick.dep - snap.t) / 3600)), tof_days: String(Math.round(pick.tof)) }, body: form.to, n: Date.now() })
     toast(t('Janela levada ao planejador: confira e planeje.'), 'good')
   }
-  const injection = pick && form.from === 'earth' ? injectionDv(pick.c3) : null
+  const depart = departure(v, form.from, fromProbe)
+  const injection = pick && depart ? injectionDv(depart, pick.c3) : null
+  const spare = injection != null && depart?.budget != null ? depart.budget - injection : null
   return (
     <div className="grid">
       <div className="grid cols-3">
         <Panel title={t('Sistema Solar (vista de cima)')} className="span-2" flush>
-          <SolarSystem path={path} probe={helio} from={form.from} to={form.to} pick={pick} />
+          <SolarSystem path={path} probe={helio} from={form.from} to={form.to} pick={pick} flyby={flyby} />
         </Panel>
         <Panel title={v ? tx(v.name) : t('Sonda')}>
           {v ? (
@@ -216,6 +224,7 @@ export function Interplanetary() {
                   ['c3', 'C3'],
                   ['vinf', t('v∞ chegada')],
                   ['total', t('Total')],
+                  ['dv', t('Δv de injeção')],
                 ] as [Metric, string][]
               ).map(([m, label]) => (
                 <button key={m} className={`small ${metric === m ? 'active' : ''}`} onClick={() => setMetric(m)} aria-pressed={metric === m}>
@@ -252,7 +261,18 @@ export function Interplanetary() {
               {busy ? t('Calculando…') : t('Calcular')}
             </button>
           </div>
-          {pc ? <PorkchopPlot pc={pc} metric={metric} pick={pick} onPick={setPick} /> : <div className="porkchop-empty muted">{t('Escolha origem, destino e datas e calcule — ou toque em “Porkchop ▸” numa janela acima.')}</div>}
+          {v && v.central === form.from && v.r && (
+            <label className="small porkchop-probe">
+              <input type="checkbox" checked={fromProbe} onChange={(e) => setFromProbe(e.target.checked)} /> {t('Partir da órbita de {n}', { n: tx(v.name) })}
+              {depart?.probe && (
+                <span className="muted">
+                  {' '}
+                  · {t('periastro')} {num((depart.rp - (store.hello?.bodies.find((b) => b.id === form.from)?.radius ?? 0)) / 1000, 0)} km · Δv {t('disponível')} {num(depart.budget, 0)} m/s
+                </span>
+              )}
+            </label>
+          )}
+          {pc ? <PorkchopPlot pc={pc} metric={metric} pick={pick} onPick={setPick} depart={depart} /> : <div className="porkchop-empty muted">{t('Escolha origem, destino e datas e calcule — ou toque em “Porkchop ▸” numa janela acima.')}</div>}
           {pick && (
             <div className="pick">
               <div className="tiles">
@@ -262,7 +282,8 @@ export function Interplanetary() {
                 <Tile label="C3" value={num(pick.c3, 1)} unit="km²/s²" />
                 <Tile label={t('v∞ partida')} value={num(Math.sqrt(pick.c3), 2)} unit="km/s" />
                 <Tile label={t('v∞ chegada')} value={num(pick.vinf, 2)} unit="km/s" />
-                {injection != null && <Tile label={t('Δv da órbita de 200 km')} value={num(injection, 0)} unit="m/s" />}
+                {injection != null && <Tile label={depart?.probe ? t('Δv de injeção da sonda') : t('Δv da órbita de 200 km')} value={num(injection, 0)} unit="m/s" />}
+                {spare != null && <Tile label={t('Sobra depois da injeção')} value={num(spare, 0)} unit="m/s" state={spare < 0 ? 'red' : spare < 200 ? 'yellow' : 'nominal'} />}
               </div>
               <div className="row">
                 {pc?.best && pick.dep === pc.best[0] && pick.tof === pc.best[1] && <span className="small good">★ {t('Melhor do gráfico (menor √C3 + v∞)')}</span>}
@@ -275,17 +296,43 @@ export function Interplanetary() {
         </Panel>
         {v && <Planner v={v} initial={v.central === 'earth' ? 'injection' : v.central === 'sun' ? 'tcm' : 'capture'} preset={preset} />}
       </div>
+      <div className="grid cols-3">
+        <FlybyPanel from={form.from} to={form.to} onPick={setFlyby} picked={flyby} />
+        {flyby ? <FlybyDiagram f={flyby} /> : <div />}
+      </div>
     </div>
   )
 }
 
 const fmtDays = (d: number) => (d >= 730 ? `${num(d / 365.25, 1)} ${t('anos')}` : `${num(d, 0)} ${t('dias')}`)
 
-/** Δv para sair de uma órbita circular de 200 km na Terra com o C3 dado (m/s). */
-function injectionDv(c3: number): number {
-  const mu = 3.986004418e14
-  const r = 6_378_137 + 200_000
-  return Math.sqrt(c3 * 1e6 + (2 * mu) / r) - Math.sqrt(mu / r)
+/** De onde a injeção parte: o periastro da órbita da sonda, ou uma órbita circular de 200 km. */
+interface Departure {
+  mu: number
+  rp: number
+  /** Velocidade no periastro (m/s). */
+  vp: number
+  /** Δv da sonda (m/s), quando a partida é da órbita dela. */
+  budget: number | null
+  probe: boolean
+}
+
+function departure(v: Vehicle | undefined, from: string, fromProbe: boolean): Departure | null {
+  const mu = MU[from]
+  if (!mu) return null
+  if (fromProbe && v && v.central === from && v.r && v.v) {
+    const el = elements(v.r as V3, v.v as V3, mu)
+    if (el.e < 1) return { mu, rp: el.periapsis, vp: Math.sqrt(mu * (2 / el.periapsis - 1 / el.a)), budget: v.tm?.['nav.dv'] ?? null, probe: true }
+  }
+  const radius = store.hello?.bodies.find((b) => b.id === from)?.radius
+  if (!radius) return null
+  const rp = radius + 200_000
+  return { mu, rp, vp: Math.sqrt(mu / rp), budget: null, probe: false }
+}
+
+/** Δv da queima no periastro que deixa a órbita com o C3 dado (m/s). */
+function injectionDv(d: Departure, c3: number): number {
+  return Math.sqrt(c3 * 1e6 + (2 * d.mu) / d.rp) - d.vp
 }
 
 /** Paleta sequencial (do escuro ao claro), boa para ler "melhor" e "pior". */
@@ -301,13 +348,19 @@ function ramp(f: number): string {
 
 const PAD = { l: 56, b: 34, t: 10, r: 78 }
 
-function PorkchopPlot({ pc, metric, pick, onPick }: { pc: Porkchop; metric: Metric; pick: Pick | null; onPick: (p: Pick) => void }) {
+function PorkchopPlot({ pc, metric, pick, onPick, depart }: { pc: Porkchop; metric: Metric; pick: Pick | null; onPick: (p: Pick) => void; depart: Departure | null }) {
   const [hover, setHover] = useState<{ i: number; j: number; x: number; y: number } | null>(null)
   const value = (i: number, j: number): number | null => {
     const c = pc.c3[j]?.[i]
     const a = pc.vinf_arr[j]?.[i]
     if (c == null || a == null) return null
+    if (metric === 'dv') return depart ? injectionDv(depart, c) / 1000 : null
     return metric === 'c3' ? c : metric === 'vinf' ? a : Math.sqrt(c) + a
+  }
+  // Células além do Δv da sonda: a injeção não cabe no tanque.
+  const over = (i: number, j: number) => {
+    const c = pc.c3[j]?.[i]
+    return c != null && depart?.budget != null && injectionDv(depart, c) > depart.budget
   }
   const unit = metric === 'c3' ? 'km²/s²' : 'km/s'
   const ref = useCanvas(
@@ -335,6 +388,24 @@ function PorkchopPlot({ pc, metric, pick, onPick }: { pc: Porkchop; metric: Metr
           ctx.fillStyle = ramp((c - lo) / (hi - lo))
           ctx.fillRect(PAD.l + i * cw, h - PAD.b - (j + 1) * ch, cw + 0.5, ch + 0.5)
         }
+      }
+      // Além do Δv da sonda: hachurado.
+      if (depart?.budget != null) {
+        ctx.save()
+        ctx.beginPath()
+        for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) if (over(i, j)) ctx.rect(PAD.l + i * cw, h - PAD.b - (j + 1) * ch, cw + 0.5, ch + 0.5)
+        ctx.clip()
+        ctx.fillStyle = '#000000a0'
+        ctx.fillRect(PAD.l, PAD.t, w - PAD.l - PAD.r, h - PAD.t - PAD.b)
+        ctx.strokeStyle = '#ff4d5e90'
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        for (let x = PAD.l - h; x < w; x += 7) {
+          ctx.moveTo(x, h)
+          ctx.lineTo(x + h, 0)
+        }
+        ctx.stroke()
+        ctx.restore()
       }
       ctx.fillStyle = '#8494b3'
       ctx.font = '11px ui-monospace, monospace'
@@ -379,11 +450,11 @@ function PorkchopPlot({ pc, metric, pick, onPick }: { pc: Porkchop; metric: Metr
       ctx.fillStyle = '#d9e2f2'
       ctx.fillText(`${hi.toFixed(metric === 'c3' ? 0 : 1)}+`, sx + 16, PAD.t + 10)
       ctx.fillText(lo.toFixed(metric === 'c3' ? 1 : 2), sx + 16, h - PAD.b)
-      ctx.fillText(metric === 'c3' ? 'C3' : metric === 'vinf' ? 'v∞' : 'Σv∞', sx + 16, (h - PAD.b) / 2)
+      ctx.fillText(metric === 'c3' ? 'C3' : metric === 'vinf' ? 'v∞' : metric === 'dv' ? 'Δv' : 'Σv∞', sx + 16, (h - PAD.b) / 2)
       ctx.fillStyle = '#8494b3'
       ctx.fillText(unit, sx + 16, (h - PAD.b) / 2 + 14)
     },
-    [pc, metric, pick, hover],
+    [pc, metric, pick, hover, depart],
   )
   const at = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const r = e.currentTarget.getBoundingClientRect()
@@ -415,14 +486,22 @@ function PorkchopPlot({ pc, metric, pick, onPick }: { pc: Porkchop; metric: Metr
           <b>{day(pc.departures[hover.i])}</b> · {num(pc.tofs_days[hover.j], 0)} {t('dias')}
           <br />
           C3 {num(pc.c3[hover.j][hover.i], 1)} · v∞ {num(pc.vinf_arr[hover.j][hover.i], 2)} km/s
+          {depart && (
+            <>
+              <br />
+              Δv {t('injeção')} {num(injectionDv(depart, pc.c3[hover.j][hover.i]!), 0)} m/s{over(hover.i, hover.j) ? ` · ${t('não cabe')}` : ''}
+            </>
+          )}
         </div>
       )}
+      {depart?.budget != null && <div className="porkchop-legend small">▨ {t('além do Δv da sonda ({dv} m/s)', { dv: num(depart.budget, 0) })}</div>}
     </div>
   )
 }
 
 /** O Sistema Solar de cima: órbitas, planetas, a sonda e a transferência escolhida. Roda aproxima, arrastar move, duplo clique volta ao Sol. */
-function SolarSystem({ path, probe, from, to, pick }: { path: [number, number][]; probe: V3 | null; from: string; to: string; pick: Pick | null }) {
+function SolarSystem({ path, probe, from, to, pick, flyby }: { path: [number, number][]; probe: V3 | null; from: string; to: string; pick: Pick | null; flyby: FlybyPick | null }) {
+  const fly = useMemo(() => (flyby ? flybyArcs(flyby) : null), [flyby])
   const snap = useStore((s) => s.snap)!
   const [zoom, setZoom] = useState(2.2)
   const [center, setCenter] = useState<'sun' | 'probe' | string>('sun')
@@ -494,6 +573,33 @@ function SolarSystem({ path, probe, from, to, pick }: { path: [number, number][]
           ctx.fillText(label, X(p[0]) + 10, Y(p[1]) + 14)
         }
       }
+      // Trajetória com sobrevoo: os dois trechos e as três passagens.
+      if (fly && flyby) {
+        ctx.lineWidth = 2
+        for (const [arc, color] of [
+          [fly.leg1, '#c084fc'],
+          [fly.leg2, '#f472b6'],
+        ] as [[number, number][], string][]) {
+          ctx.strokeStyle = color
+          ctx.beginPath()
+          arc.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y))))
+          ctx.stroke()
+        }
+        ctx.font = '11px ui-monospace, monospace'
+        for (const [p, label, color] of [
+          [fly.r0, `${t('partida')} ${day(flyby.depart)}`, COLORS[flyby.from]],
+          [fly.rf, `${t('sobrevoo')} ${day(flyby.flyby)}`, COLORS[flyby.via]],
+          [fly.ra, `${t('chegada')} ${day(flyby.arrive)}`, COLORS[flyby.to]],
+        ] as [V3, string, string][]) {
+          ctx.strokeStyle = color
+          ctx.lineWidth = 1.5
+          ctx.beginPath()
+          ctx.arc(X(p[0]), Y(p[1]), 7, 0, Math.PI * 2)
+          ctx.stroke()
+          ctx.fillStyle = '#f0b8ff'
+          ctx.fillText(label, X(p[0]) + 10, Y(p[1]) - 10)
+        }
+      }
       // Planetas (e a Lua, de perto).
       ctx.font = '11px system-ui'
       for (const b of snap.bodies) {
@@ -545,7 +651,7 @@ function SolarSystem({ path, probe, from, to, pick }: { path: [number, number][]
       ctx.fillText(day(snap.t), w - 10, h - 10)
       ctx.textAlign = 'left'
     },
-    [snap, path, probe, zoom, center, pan, from, to, transfer],
+    [snap, path, probe, zoom, center, pan, from, to, transfer, fly, flyby],
   )
   const reset = () => {
     setPan([0, 0])

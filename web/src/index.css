@@ -2497,3 +2497,17 @@ table.windows td .dot {
 .pannable:active {
   cursor: grabbing;
 }
+.porkchop-probe {
+  display: block;
+  margin-top: 6px;
+}
+.porkchop-legend {
+  position: absolute;
+  left: 60px;
+  top: 14px;
+  background: #000a;
+  color: #ffb3bb;
+  padding: 1px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+}

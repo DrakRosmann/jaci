@@ -105,6 +105,8 @@ export interface PilotPrefs {
   adiMarkers: boolean
   adiNode: boolean
   adiTarget: boolean
+  /** Barras do diretor de voo (para onde o guiamento quer o nariz). */
+  adiDirector: boolean
   step: number
   dv: number
   throttleStep: number
@@ -131,6 +133,7 @@ export const DEFAULT_PREFS: PilotPrefs = {
   adiMarkers: true,
   adiNode: true,
   adiTarget: true,
+  adiDirector: true,
   step: 5,
   dv: 0.1,
   throttleStep: 10,

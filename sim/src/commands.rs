@@ -144,7 +144,8 @@ pub fn dictionary() -> Vec<CmdDef> {
         def("att_mode", "Modo de atitude", "Atitude", "Escolhe para onde a nave aponta", vec![e("mode", "Modo", att_modes()), opt(a("target", "Alvo", "vehicle"))], false, false, &all),
         def("desat", "Descarregar rodas", "Atitude", "Descarrega o momento das rodas de reação (bobinas ou RCS)", vec![], false, false, &all),
         def("att_nudge", "Atitude manual", "Atitude", "Pilotagem manual: gira a atitude alvo em graus, no referencial da nave", vec![opt(n("pitch", "Arfagem", "°")), opt(n("yaw", "Guinada", "°")), opt(n("roll", "Rolamento", "°"))], false, false, &all),
-        def("pdi", "Descida propulsada", "Reentrada", "Liga o programa de pouso com motor: freia, desce e pousa nas pernas (Lua, Marte)", vec![], false, false, &all),
+        def("manual_steer", "Pilotagem manual (CSS)", "Atitude", "O piloto aponta a nave seguindo o diretor de voo; o guiamento continua com a potência e o corte", vec![e("on", "Estado", ON_OFF.to_vec())], false, false, &all),
+        def("pdi", "Descida propulsada", "Reentrada", "Liga o programa de pouso com motor: freia, desce e pousa nas pernas (Lua, Marte); desligado, o piloto assume a descida com o motor aceso", vec![opt(e("on", "Programa", vec![("on", "Ligar"), ("off", "Desligar: descida manual")]))], false, false, &all),
         def("rcs_pulse", "Pulso de RCS", "Atitude", "Translação curta com os propulsores de controle", vec![e("dir", "Direção", vec![("prograde", "Prógrado"), ("retrograde", "Retrógrado"), ("radial_out", "Radial +"), ("radial_in", "Radial −"), ("normal", "Normal"), ("antinormal", "Antinormal")]), n("dv", "Δv", "m/s")], false, false, &all),
         // Manobras
         def("burn", "Queima programada", "Manobras", "Acrescenta uma queima com Δv em RTN num instante", vec![n("t", "Daqui a", "s"), n("dv_r", "Δv radial", "m/s"), n("dv_t", "Δv transversal", "m/s"), n("dv_n", "Δv normal", "m/s"), opt(a("label", "Nome", "text"))], false, false, &all),

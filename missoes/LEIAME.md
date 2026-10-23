@@ -31,7 +31,10 @@ cada arquivo salvo pelo editor do console **Instrutor**, que também confere e m
 * `escola/<id>.toml` — lições da escola de controle: `scenario`, `intro`, `done`, `par_s` (tempo
   de referência das três estrelas), `vehicle` e `[[objectives]]` com `text`, `hint`, `until` (a
   mesma linguagem das condições, mais `ui.view`, `selected`, `warp`, `launch.polled`, `burns`,
-  `alarms`, `acked`, `leak_isolated`, `safe_mode` e `att_mode`), `console` e `vehicle`.
+  `alarms`, `acked`, `leak_isolated`, `safe_mode`, `att_mode` e, para o console PILOT, `manual`
+  (pilotagem manual ligada), `program` (o programa de guiamento: `ascent`, `powereddescent`…,
+  ou `none`), `docked`, `target_range` e `target_rate` (m e m/s até o alvo) e `fd_error` (graus
+  entre o nariz e o diretor de voo)), `console` e `vehicle`.
 * `ccsds/<nome>.xml` — dicionários de telemetria CCSDS em XTCE: cada contêiner com o APID vira um
   pacote de layout fixo, com unidades, calibração e alarmes (veja `cubesat.xml` e
   `docs/protocolo.md`).

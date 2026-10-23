@@ -143,7 +143,9 @@ export function Maneuver({ v, node, height }: { v: Vehicle; node: Node | undefin
       const C = palette()
       ctx.fillStyle = '#000'
       ctx.fillRect(0, 0, w, h)
-      if (!node) {
+      // Sem queima, o diretor da subida ou da descida (quando há programa de guiamento).
+      const fdDir = !node && v.guidance?.director ? (v.guidance.director as V3) : null
+      if (!node && !fdDir) {
         message(ctx, C, w, h, [t('SEM QUEIMAS PLANEJADAS'), t('Planeje no painel MANOBRAS ou no console FIDO.')])
         return
       }
@@ -168,7 +170,7 @@ export function Maneuver({ v, node, height }: { v: Vehicle; node: Node | undefin
       ctx.strokeStyle = C.amber
       ctx.lineWidth = 2
       ctx.strokeRect(cx - 6, cy - 6, 12, 12)
-      const dir = nodeDirection(v, node)
+      const dir = node ? nodeDirection(v, node) : fdDir
       let err: number | null = null
       if (dir && v.q) {
         const o = offsets(dir, v.q as Q)
@@ -196,6 +198,30 @@ export function Maneuver({ v, node, height }: { v: Vehicle; node: Node | undefin
         }
         ctx.textAlign = 'left'
         ctx.textBaseline = 'alphabetic'
+      }
+      if (!node) {
+        // Diretor do programa: subida (PEG), descida propulsada, reentrada…
+        const g = v.guidance!
+        ctx.font = 'bold 14px ui-monospace, monospace'
+        ctx.fillStyle = C.line
+        ctx.fillText(t(PROGRAMS[g.program] ?? g.program).toUpperCase(), 12, 22)
+        ctx.font = 'bold 26px ui-monospace, monospace'
+        ctx.fillStyle = g.manual ? C.amber : C.green
+        ctx.fillText(g.t_go > 0 ? `T-GO ${duration(g.t_go)}` : g.manual ? t('MANUAL') : 'AUTO', 12, 56)
+        readout(ctx, C, 12, 84, [
+          [t('ERRO'), err != null ? `${num(err, 1)}°` : '—', err != null && err > 5 ? C.amber : C.green],
+          [t('PILOTO'), g.manual ? t('MANUAL') : t('AUTOMÁTICO'), g.manual ? C.amber : C.dim],
+          [t('MALHA'), g.closed_loop ? t('FECHADA') : t('ABERTA'), C.dim],
+          ['ALT', dist(v.alt * 1000)],
+          [t('VV'), `${num(v.tm?.['nav.vspeed'], 1)} m/s`],
+          [t('VEL'), `${num(v.speed, 0)} m/s`],
+        ])
+        ctx.fillStyle = C.dim
+        ctx.font = '10px ui-monospace, monospace'
+        ctx.textAlign = 'center'
+        ctx.fillText(t('DIRETOR: ✚ NO QUADRADO = APONTADO'), cx, h - 8)
+        ctx.textAlign = 'left'
+        return
       }
       // Números à esquerda.
       const tgo = node.t - now
@@ -240,6 +266,16 @@ export function Maneuver({ v, node, height }: { v: Vehicle; node: Node | undefin
       <canvas ref={ref} role="img" aria-label={t('Manobras e diretor de voo')} />
     </div>
   )
+}
+
+/** Nomes dos programas de guiamento. */
+const PROGRAMS: Record<string, string> = {
+  ascent: 'Subida',
+  sounding: 'Sondagem',
+  entry: 'Reentrada',
+  docking: 'Aproximação',
+  rtls: 'Retorno ao local',
+  powereddescent: 'Descida propulsada',
 }
 
 // ── DSC ──

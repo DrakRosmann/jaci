@@ -143,7 +143,16 @@ sequência automática de ativação de satélite.
   sinódico), com um botão que calcula o porkchop em volta da janela; o porkchop de qualquer planeta
   para qualquer outro, colorido por C3, por v∞ de chegada ou pela soma, com os valores sob o mouse,
   o melhor ponto marcado e, no ponto escolhido, as datas, os v∞, o Δv a partir de uma órbita de
-  200 km e o botão que leva a janela ao planejador de manobras; e a sonda: velocidade
+  200 km e o botão que leva a janela ao planejador de manobras. Com a sonda no planeta de origem,
+  o porkchop parte da órbita de verdade dela (queima no periastro): mostra o Δv de injeção em cada
+  célula, quanto sobra do Δv da sonda e hachura o que não cabe no tanque. **Gravidade assistida:**
+  procura trajetórias com um sobrevoo (por exemplo Terra–Vênus–Marte ou Terra–Júpiter–Saturno)
+  resolvendo os dois trechos por Lambert numa grade de datas, refinada em volta das melhores. Num
+  sobrevoo, a gravidade gira o v∞ até o máximo que o periastro mínimo permite (acima da atmosfera,
+  e de 3 raios em Júpiter, pela radiação); o que não couber vira queima no periastro. A tabela
+  mostra as datas, C3, v∞ chegando e saindo, deflexão, periastro, Δv do sobrevoo, ganho
+  heliocêntrico e o custo comparado com o voo direto. A escolhida aparece no mapa (os dois
+  trechos) e num diagrama da hipérbole do sobrevoo. E a sonda: velocidade
   heliocêntrica, distâncias do Sol, da Terra e do destino, atraso da luz, elongação (o ângulo
   Sol–Terra–sonda, que avisa da conjunção solar) e a próxima queima.
 * **Procedimentos (PROC):** listas de verificação que mandam comandos e esperam condições de
@@ -188,18 +197,50 @@ sequência automática de ativação de satélite.
   arfagem, A/D guinada, Q/E rolamento, I/K, J/L e H/N para o RCS, R/F mais e menos potência, Z/X
   máxima e zero, B ignição, O corte, G manter atitude). Os comandos perigosos nunca vão para o
   teclado. Tudo fica guardado no navegador.
+  **Pilotagem manual com diretor de voo (CSS):** na subida, na descida propulsada, na reentrada e
+  nas queimas planejadas, o guiamento continua calculando a atitude, a potência e os cortes, mas
+  quem aponta a nave é o piloto. As barras magenta do diretor (FD) no horizonte artificial e a
+  página MNV mostram para onde o guiamento quer o nariz e o erro em graus. Sem ninguém nas teclas,
+  a nave não segue sozinha: um foguete fica na vertical. Na descida propulsada, ASSUMIR (P66)
+  desliga o programa com o motor aceso e o piloto controla atitude e potência até o toque, como na
+  Apollo 11. O ADI mostra também o retrógrado em relação ao solo (⊘), para matar a velocidade
+  horizontal no pouso. Os pulsos de RCS transladam sem girar a nave, e a nave pilotada até a porta
+  livre de outra (a menos de 1,5 m, se aproximando a menos de 0,4 m/s) é capturada. Ao desacoplar,
+  ela sai da porta a 0,1 m/s e a dinâmica orbital faz o resto.
 * **Pouso na Lua e em Marte:** naves com pernas tocam o solo se chegarem a menos de 3,5 m/s na
   vertical e 2,5 m/s de lado. O programa de descida propulsada segue uma curva de frenagem a
   desaceleração constante até 15 m e depois desce a 1,5 m/s; o empuxo atende primeiro a vertical e
   o resto mata a velocidade horizontal, e a inclinação máxima cai de 75° a 2,5 km para 20° perto do
   chão. Em Marte, a sonda pende do paraquedas com o motor para baixo e começa a descida sozinha a
   1,2 km.
-* **Nave em 3D (3D):** a nave montada dos estágios — diâmetros e comprimentos de verdade,
-  boosters, coifa, cápsula com torre de escape, painéis solares, paraquedas abertos, plumas dos
-  motores acesos —, na atitude dela em relação ao horizonte local, com os estágios e motores ao
-  lado.
-* **Escola de controle (EDU):** lições curtas para aprender a sala — primeiros passos, a primeira
-  contagem (VSB-30), circularizar uma órbita, um vazamento na estação e uma asa solar danificada.
+* **Nave em 3D (3D):** a nave montada dos estágios, com diâmetros e comprimentos de verdade e
+  texturas geradas no próprio Jaci:
+  - foguete: tanques de painéis com rebites, interestágios e sinos de motor com perfil de Laval;
+  - boosters, coifa ogival e tanque externo de espuma laranja com o orbitador alado ao lado;
+  - cápsula com escudo, janelas, propulsores de RCS e sonda de acoplamento (ou a torre de escape);
+  - módulo de serviço com radiadores e painéis;
+  - módulo lunar com pernas e estágio de subida, e sonda de pouso com convés de instrumentos;
+  - satélite com manta térmica dourada, asas de células e antena parabólica;
+  - estação com módulos, treliça, asas e radiadores;
+  - paraquedas abertos com as cordas.
+
+  A nave aparece na atitude dela em relação ao horizonte local, com a luz do Sol de verdade (fraca
+  na sombra), as estrelas e o planeta embaixo, com mares, continentes, nuvens e o halo da
+  atmosfera, girado para o ponto sob a nave. Os efeitos:
+  - plumas com núcleo claro, que se abrem com a altitude e esquentam o sino;
+  - na reentrada, a casca de plasma na frente, o rastro e as faíscas, orientados pela velocidade
+    em relação ao ar e com a intensidade do aquecimento;
+  - perto do pouso, o solo de verdade embaixo (regolito com crateras na Lua, a poeira de Marte, o
+    mar ou a plataforma com a torre na Terra) e a poeira, ou a fumaça na plataforma, levantada
+    pelo motor;
+  - as naves acopladas presas nas portas da estação: selecionando a visitante, a câmera mira nela
+    e na porta.
+* **Escola de controle (EDU):** lições curtas para aprender a sala:
+  - primeiros passos, a primeira contagem (VSB-30), circularizar uma órbita, um vazamento na
+    estação e uma asa solar danificada;
+  - no console PILOT: pilotar a nave (modos de atitude, teclado e circularizar só com pulsos de
+    RCS), a subida pilotada do VLM-1 pelo diretor de voo, acoplar na estação só com pulsos e o
+    pouso na Lua pilotado, com o P66 no fim.
   Cada uma carrega um cenário e dá objetivos que o Jaci confere sozinho; um cartão acompanha em
   qualquer console, com dica e "me leve lá", e no fim dá até três estrelas (tempo e dicas). Novas
   lições se escrevem em `missoes/escola/*.toml`.

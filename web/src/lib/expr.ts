@@ -4,6 +4,8 @@
 // and/or/not e parênteses.
 
 import type { Snapshot, Vehicle } from '../types'
+import type { Q, V3 } from './attitude'
+import { offsets, pickTarget, relative } from './mfd'
 
 type Tok = { k: 'num'; v: number } | { k: 'str'; v: string } | { k: 'id'; v: string } | { k: 'op'; v: string }
 
@@ -139,6 +141,21 @@ function lookup(name: string, v: Vehicle, s: Snapshot, ui?: UiCtx): number | str
       return !!v.safe_mode
     case 'att_mode':
       return v.systems?.adcs.mode ?? null
+    // Console PILOT: pilotagem manual, programa de guiamento, alvo e diretor.
+    case 'manual':
+      return !!v.guidance?.manual
+    case 'program':
+      return v.guidance?.program ?? 'none'
+    case 'docked':
+      return v.attached_to != null
+    case 'target_range':
+    case 'target_rate': {
+      const tg = pickTarget(v, s.vehicles)
+      const rel = tg ? relative(v, tg) : null
+      return rel ? (name === 'target_range' ? rel.range : rel.rate) : null
+    }
+    case 'fd_error':
+      return v.q && v.guidance?.director ? offsets(v.guidance.director as V3, v.q as Q).angle : null
     case 'phase':
       return v.phase
     case 'kind':

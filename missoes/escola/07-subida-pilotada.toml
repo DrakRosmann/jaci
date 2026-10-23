@@ -1,0 +1,37 @@
+name = "Subida pilotada"
+description = "Leve o VLM-1 à órbita apontando a nave você mesmo, seguindo o diretor de voo"
+order = 7
+scenario = "escola-subida"
+vehicle = "VLM-1"
+par_s = 1200
+intro = """
+Na pilotagem manual (CSS, como no ônibus espacial), o guiamento continua calculando a subida, a
+potência e os cortes, mas quem aponta o foguete é você. As barras magenta do diretor de voo (FD)
+no horizonte artificial mostram para onde o guiamento quer o nariz: mantenha o centro do ADI no
+cruzamento delas.
+"""
+done = "Em órbita, pilotando! Sem o diretor, a nave teria ficado na vertical e caído no mar."
+
+[[objectives]]
+text = "Abra o console PILOT, ligue a PILOTAGEM MANUAL (CSS) no grupo ATITUDE e \"Pilotar pelo teclado\"; ponha a página MNV num dos MFDs."
+hint = "Tecla p para o console; o botão fica no alto do grupo ATITUDE e a luz PILOTO MANUAL acende. MNV mostra o diretor grande, com o erro em graus."
+until = "manual"
+console = "manual"
+
+[[objectives]]
+text = "Comece a contagem no console de Lançamento (LCC) e volte ao PILOT."
+hint = "Tecla 2, \"Iniciar contagem\". Se parar numa espera, faça a votação e retome."
+until = "launch.state == 'counting' or phase != 'prelaunch'"
+console = "launch"
+
+[[objectives]]
+text = "Decolagem! Siga as barras do FD com W/S (arfagem) e A/D (guinada) e mantenha o erro abaixo de 5°."
+hint = "O foguete começa a inclinar para leste logo depois da torre: arfagem para baixo (W). O erro está no canto do ADI (FD) e na página MNV."
+until = "phase != 'prelaunch' and alt > 60"
+console = "manual"
+
+[[objectives]]
+text = "Continue seguindo o diretor até a inserção em órbita."
+hint = "Os estágios separam e acendem sozinhos; o diretor muda de lei na malha fechada. Se o erro crescer, a órbita fica baixa."
+until = "inserted and orb.pe > 150"
+console = "manual"

@@ -221,3 +221,14 @@ export function transferArc(r1: V3, v1: V3, r2: V3, mu = MU_SUN, n = 120): [numb
     return [q[0], q[1]] as [number, number]
   })
 }
+
+/** Trajetória com sobrevoo: os dois arcos (x, y na eclíptica) e as posições na partida, no sobrevoo e na chegada. */
+export function flybyArcs(f: { from: string; via: string; to: string; depart: number; flyby: number; arrive: number }) {
+  const r0 = planetPosition(f.from, f.depart)
+  const rf = planetPosition(f.via, f.flyby)
+  const ra = planetPosition(f.to, f.arrive)
+  if (!r0 || !rf || !ra) return null
+  const l1 = lambert(r0, rf, f.flyby - f.depart)
+  const l2 = lambert(rf, ra, f.arrive - f.flyby)
+  return { r0, rf, ra, leg1: l1 ? transferArc(r0, l1[0], rf) : [], leg2: l2 ? transferArc(rf, l2[0], ra) : [] }
+}

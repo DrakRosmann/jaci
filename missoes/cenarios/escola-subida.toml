@@ -1,0 +1,16 @@
+# Escola: subida pilotada à mão. VLM-1 em Alcântara a T-2 min, tempo calmo.
+name = "Escola: subida pilotada"
+description = "Microlançador VLM-1 em Alcântara a T-2 min: pilote a subida seguindo o diretor de voo"
+
+[[vehicles]]
+vehicle = "vlm1"
+name = "VLM-1"
+place = "pad"
+site = "Alcântara"
+t_minus = 120
+
+[weather]
+surface_wind = 3
+lightning_km = 120
+ceiling_m = 5000
+evolve = false

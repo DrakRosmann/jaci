@@ -721,9 +721,208 @@ pub fn porkchop(from: Body, to: Body, t_start: f64, span_days: f64, tof_min_days
     Porkchop { from, to, departures, tofs_days, c3, vinf_arr: va, best }
 }
 
+/// Uma trajetória com um sobrevoo (gravidade assistida): partida, passagem
+/// pelo planeta do meio e chegada. Velocidades em km/s.
+#[derive(Clone, Debug, Serialize)]
+pub struct Flyby {
+    pub depart: f64,
+    pub flyby: f64,
+    pub arrive: f64,
+    /// C3 de partida (km²/s²).
+    pub c3: f64,
+    /// v∞ chegando e saindo do planeta do sobrevoo.
+    pub vinf_in: f64,
+    pub vinf_out: f64,
+    /// Deflexão pedida e a máxima com o periastro na altitude mínima (graus).
+    pub turn_deg: f64,
+    pub turn_max_deg: f64,
+    /// Altitude do periastro do sobrevoo (km).
+    pub rp_alt_km: f64,
+    /// Queima no periastro para casar os v∞ (sobrevoo propulsado).
+    pub dv_flyby: f64,
+    pub vinf_arr: f64,
+    /// Ganho de velocidade heliocêntrica no sobrevoo.
+    pub gain: f64,
+    /// √C3 + Δv do sobrevoo + v∞ de chegada.
+    pub cost: f64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct FlybySearch {
+    pub from: &'static str,
+    pub via: &'static str,
+    pub to: &'static str,
+    /// As melhores, da mais barata para a mais cara (sem repetir a mesma janela).
+    pub results: Vec<Flyby>,
+    /// O melhor voo direto na mesma janela: partida, viagem (dias), C3 e v∞ de chegada.
+    pub direct: Option<(f64, f64, f64, f64)>,
+    pub evaluated: usize,
+}
+
+/// Altitude mínima do periastro de um sobrevoo (m): acima da atmosfera, e
+/// longe dos cinturões de radiação nos gigantes.
+fn flyby_min_alt(b: Body) -> f64 {
+    match b {
+        Body::Jupiter => b.radius() * 3.0,
+        Body::Saturn | Body::Uranus | Body::Neptune => b.radius() * 0.5,
+        Body::Venus | Body::Earth | Body::Mars => 300e3,
+        _ => 100e3,
+    }
+}
+
+/// Uma trajetória com sobrevoo para as datas dadas (partida, e as duas viagens em s).
+fn flyby_eval(from: Body, via: Body, to: Body, td: f64, t1: f64, t2: f64) -> Option<Flyby> {
+    if t1 <= 0.0 || t2 <= 0.0 {
+        return None;
+    }
+    let sun = Body::Sun;
+    let mu_s = sun.mu();
+    let mu_v = via.mu();
+    let rp_min = via.radius() + flyby_min_alt(via);
+    let (r0, v0) = from.state_relative_to(sun, td);
+    let tf = td + t1;
+    let ta = tf + t2;
+    let (rf, vf) = via.state_relative_to(sun, tf);
+    let (ra, va) = to.state_relative_to(sun, ta);
+    let (l1, l2) = lambert(r0, rf, t1, mu_s, true)?;
+    let (l3, l4) = lambert(rf, ra, t2, mu_s, true)?;
+    let (vin, vout) = (l2 - vf, l3 - vf);
+    let (a, b) = (vin.norm(), vout.norm());
+    let vm = (a + b) / 2.0;
+    let turn = vin.angle(vout);
+    let turn_max = 2.0 * (1.0 / (1.0 + rp_min * vm * vm / mu_v)).asin();
+    // A gravidade gira até turn_max com o periastro na altitude mínima; o que passar disso
+    // é uma queima para girar o vetor (2·v∞·sen(excesso/2)).
+    let (rp, dv_turn) = if turn > turn_max {
+        (rp_min, 2.0 * vm * ((turn - turn_max) / 2.0).sin())
+    } else {
+        (mu_v / (vm * vm) * (1.0 / (turn / 2.0).sin().max(1e-9) - 1.0), 0.0)
+    };
+    // Queima no periastro que casa os módulos das duas hipérboles.
+    let dv_mag = ((b * b + 2.0 * mu_v / rp).sqrt() - (a * a + 2.0 * mu_v / rp).sqrt()).abs();
+    let dv_flyby = dv_mag + dv_turn;
+    let c3 = (l1 - v0).norm2() / 1e6;
+    let vinf_arr = (l4 - va).norm() / 1e3;
+    let cost = c3.sqrt() + dv_flyby / 1e3 + vinf_arr;
+    (cost.is_finite() && c3 < 400.0).then_some(Flyby {
+        depart: td,
+        flyby: tf,
+        arrive: ta,
+        c3,
+        vinf_in: a / 1e3,
+        vinf_out: b / 1e3,
+        turn_deg: turn.to_degrees(),
+        turn_max_deg: turn_max.to_degrees(),
+        rp_alt_km: (rp - via.radius()) / 1e3,
+        dv_flyby: dv_flyby / 1e3,
+        vinf_arr,
+        gain: (l3.norm() - l2.norm()) / 1e3,
+        cost,
+    })
+}
+
+/// Procura trajetórias de `from` a `to` passando por `via`: partidas em
+/// `span_days` a partir de `t_start` e os dois trechos nos intervalos de
+/// viagem dados (dias). Uma grade de n × n × n acha as regiões boas e cada
+/// uma das melhores é refinada (busca por padrões nas três datas), porque as
+/// soluções quase balísticas ficam em faixas estreitas.
+pub fn flyby_search(from: Body, via: Body, to: Body, t_start: f64, span_days: f64, tof1: (f64, f64), tof2: (f64, f64), n: usize) -> FlybySearch {
+    let n = n.clamp(5, 60);
+    let day = 86_400.0;
+    let grid = |a: f64, b: f64, k: usize| a + (b - a) * k as f64 / (n - 1) as f64;
+    let mut coarse: Vec<(f64, [f64; 3])> = Vec::new();
+    let mut evaluated = 0;
+    for i in 0..n {
+        for j in 0..n {
+            for k in 0..n {
+                evaluated += 1;
+                let x = [grid(0.0, span_days, i), grid(tof1.0, tof1.1, j), grid(tof2.0, tof2.1, k)];
+                if let Some(f) = flyby_eval(from, via, to, t_start + x[0] * day, x[1] * day, x[2] * day) {
+                    coarse.push((f.cost, x));
+                }
+            }
+        }
+    }
+    coarse.sort_by(|a, b| a.0.total_cmp(&b.0));
+    // Sementes distintas (partidas a mais de 10 dias uma da outra).
+    let mut seeds: Vec<[f64; 3]> = Vec::new();
+    for (_, x) in &coarse {
+        if seeds.iter().all(|s| (s[0] - x[0]).abs() > 10.0) {
+            seeds.push(*x);
+        }
+        if seeds.len() >= 24 {
+            break;
+        }
+    }
+    let lo = [0.0, tof1.0, tof2.0];
+    let hi = [span_days, tof1.1, tof2.1];
+    let cost = |x: [f64; 3]| flyby_eval(from, via, to, t_start + x[0] * day, x[1] * day, x[2] * day).map_or(f64::INFINITY, |f| f.cost);
+    let mut refined: Vec<Flyby> = Vec::new();
+    for seed in seeds {
+        let mut x = seed;
+        let mut best = cost(x);
+        let mut step = [span_days / (n - 1) as f64, (tof1.1 - tof1.0) / (n - 1) as f64, (tof2.1 - tof2.0) / (n - 1) as f64];
+        for _ in 0..14 {
+            let mut moved = true;
+            while moved {
+                moved = false;
+                for d in 0..3 {
+                    for sgn in [-1.0, 1.0] {
+                        let mut y = x;
+                        y[d] = (y[d] + sgn * step[d]).clamp(lo[d], hi[d]);
+                        evaluated += 1;
+                        let c = cost(y);
+                        if c < best - 1e-6 {
+                            best = c;
+                            x = y;
+                            moved = true;
+                        }
+                    }
+                }
+            }
+            for s in &mut step {
+                *s /= 2.0;
+            }
+        }
+        if let Some(f) = flyby_eval(from, via, to, t_start + x[0] * day, x[1] * day, x[2] * day) {
+            refined.push(f);
+        }
+    }
+    refined.sort_by(|a, b| a.cost.total_cmp(&b.cost));
+    // Uma por janela: descarta as que partem a menos de 15 dias de uma melhor.
+    let mut results: Vec<Flyby> = Vec::new();
+    for f in refined {
+        if results.iter().all(|r| (r.depart - f.depart).abs() > 15.0 * day) {
+            results.push(f);
+        }
+        if results.len() >= 8 {
+            break;
+        }
+    }
+    let direct = porkchop(from, to, t_start, span_days, tof1.0 + tof2.0, tof1.1 + tof2.1, 40).best;
+    FlybySearch { from: from.id(), via: via.id(), to: to.id(), results, direct, evaluated }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sobrevoo_de_venus_a_caminho_de_marte() {
+        // Terra → Vênus → Marte em 2026–2030: há trajetórias quase balísticas, em que
+        // Vênus dá velocidade de graça e o periastro fica acima da altitude mínima.
+        let t0 = crate::time::from_calendar(2026, 10, 1, 0, 0, 0.0);
+        let s = flyby_search(Body::Earth, Body::Venus, Body::Mars, t0, 1500.0, (80.0, 250.0), (100.0, 400.0), 24);
+        let best = s.results.iter().find(|f| f.dv_flyby < 0.05).expect("nenhum sobrevoo balístico");
+        println!("{best:?}");
+        assert!(best.gain > 1.0, "ganho {}", best.gain);
+        assert!(best.rp_alt_km >= 299.0, "periastro {} km", best.rp_alt_km);
+        assert!(best.turn_deg <= best.turn_max_deg + 0.01);
+        assert!((best.vinf_in - best.vinf_out).abs() < 0.05);
+        assert!(s.results.windows(2).all(|w| w[0].cost <= w[1].cost));
+        assert!(s.direct.is_some());
+    }
+
     use crate::catalog;
     use crate::time::from_calendar;
 

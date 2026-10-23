@@ -573,3 +573,228 @@ fn cruzeiro_simulacao_e_planejador_concordam() {
         }
     }
 }
+
+/// Um "piloto" que segue o diretor de voo com os mesmos comandos das teclas:
+/// a cada segundo, gira a atitude pedida em direção ao nariz do guiamento.
+fn pilot_follows_director(w: &mut World, id: u32) {
+    use jaci_sim::subsystems::AttMode;
+    let v = w.vehicle(id).unwrap();
+    let (Some(want), Some(AttMode::Inertial(q))) = (v.guidance.att_cmd, v.systems.as_ref().map(|s| s.adcs.mode)) else { return };
+    let d = q.inv_rotate(want.forward());
+    let lim = |a: f64| a.to_degrees().clamp(-10.0, 10.0);
+    let pitch = lim((-d.z).atan2(d.x));
+    let yaw = lim(d.y.atan2(d.x));
+    if pitch.abs() + yaw.abs() > 0.05 {
+        w.execute(id, &Command::new("att_nudge").with("pitch", pitch).with("yaw", yaw)).expect("att_nudge");
+    }
+}
+
+#[test]
+fn subida_pilotada_a_mao_pelo_diretor() {
+    let mut w = scenarios::build("vlm", t0(), 5).unwrap();
+    let id = w.launch.vehicle.unwrap();
+    w.execute(id, &Command::new("manual_steer").with("on", "on")).expect("pilotagem manual");
+    let id = launch(&mut w);
+    // Sem ninguém nas teclas, a nave não segue o guiamento sozinha.
+    run_until(&mut w, 40.0, |_| false);
+    let v = w.vehicle(id).unwrap();
+    let off = v.att.forward().angle(v.guidance.att_cmd.expect("diretor").forward()).to_degrees();
+    println!("40 s sem piloto: {off:.1}° fora do diretor");
+    assert!(off > 3.0, "a nave seguiu o guiamento sozinha ({off:.1}°)");
+    // Com o piloto seguindo o diretor, chega à órbita.
+    let mut next = w.t;
+    let end = w.t + 1_500.0;
+    while w.t < end {
+        if w.t >= next {
+            pilot_follows_director(&mut w, id);
+            next = w.t + 1.0;
+        }
+        w.step(0.25);
+        let v = w.vehicle(id).unwrap();
+        if v.guidance.inserted || v.phase.is_final() {
+            break;
+        }
+    }
+    print_events(&w);
+    let (pe, ap, i) = orbit_of(&w, id);
+    println!("subida pilotada: {pe:.0} × {ap:.0} km, {i:.1}°");
+    assert!(w.vehicle(id).unwrap().guidance.inserted, "não inseriu");
+    assert!(pe > 150.0, "perigeu baixo: {pe:.0} km");
+}
+
+#[test]
+fn pouso_na_lua_pilotado_pelo_diretor() {
+    let mut w = scenarios::build("pouso-lua", t0(), 3).unwrap();
+    let id = w.vehicles[0].id;
+    let mut last = f64::INFINITY;
+    run_until(&mut w, 3_600.0, |w| {
+        let a = w.vehicle(id).unwrap().derived.alt;
+        let past = a > last;
+        last = a;
+        past
+    });
+    w.execute(id, &Command::new("manual_steer").with("on", "on")).unwrap();
+    w.execute(id, &Command::new("pdi")).expect("PDI");
+    let mut next = w.t;
+    let end = w.t + 3_600.0;
+    while w.t < end && !w.vehicle(id).unwrap().phase.is_final() {
+        if w.t >= next {
+            pilot_follows_director(&mut w, id);
+            next = w.t + 0.5;
+        }
+        w.step(0.25);
+    }
+    for e in w.events.iter().rev().take(5).rev() {
+        println!("{:>8.1} [{:?}] {}", e.t - t0(), e.level, e.text);
+    }
+    let v = w.vehicle(id).unwrap();
+    println!("fase {:?}, propelente {:.0} kg", v.phase, v.stages[0].propellant);
+    assert_eq!(v.phase, Phase::Landed, "não pousou");
+}
+
+/// Posição e velocidade da nave no LVLH do alvo (radial, V-bar, H-bar).
+fn lvlh(w: &World, id: u32, tid: u32) -> (jaci_sim::math::Vec3, jaci_sim::math::Vec3) {
+    use jaci_sim::math::Vec3;
+    let (v, t) = (w.vehicle(id).unwrap(), w.vehicle(tid).unwrap());
+    let x = t.r.unit();
+    let z = t.r.cross(t.v).unit();
+    let y = z.cross(x);
+    let n = (t.central.mu() / t.r.norm().powi(3)).sqrt();
+    let dr = v.r - t.r;
+    let dv = v.v - t.v - (z * n).cross(dr);
+    (Vec3::new(dr.dot(x), dr.dot(y), dr.dot(z)), Vec3::new(dv.dot(x), dv.dot(y), dv.dot(z)))
+}
+
+#[test]
+fn acoplamento_pilotado_com_pulsos() {
+    let mut w = scenarios::build("estacao", t0(), 3).unwrap();
+    let sid = w.vehicles[0].id;
+    let cid = w.vehicles.iter().find(|v| v.attached_to == Some(sid)).unwrap().id;
+    let port = w.vehicle(sid).unwrap().ports[0].offset;
+    w.execute(cid, &Command::new("undock")).expect("desacoplar");
+    // Afasta até uns 40 m da porta.
+    run_until(&mut w, 1_200.0, |w| (lvlh(w, cid, sid).0.y + port).abs() > 40.0);
+    let (rho, _) = lvlh(&w, cid, sid);
+    println!("afastada: V {:.1} m, R {:.1} m, H {:.1} m (porta em V = −{port} m)", rho.y, rho.x, rho.z);
+    // Piloto: a cada 8 s, pulsos para levar a velocidade relativa à desejada (rumo à porta).
+    let steps = [0.01, 0.02, 0.05, 0.1];
+    let end = w.t + 3_600.0;
+    let mut pulses = 0;
+    while w.t < end && w.vehicle(cid).unwrap().attached_to.is_none() {
+        let (rho, rdot) = lvlh(&w, cid, sid);
+        let to = jaci_sim::math::Vec3::new(0.0, -port, 0.0) - rho;
+        let speed = (0.01 * to.norm() + 0.05).min(0.25);
+        let want = to.unit() * speed;
+        let err = want - rdot;
+        for (e, pos, neg) in [(err.x, "radial_out", "radial_in"), (err.y, "prograde", "retrograde"), (err.z, "normal", "antinormal")] {
+            let Some(&dv) = steps.iter().rev().find(|&&s| s <= e.abs()) else { continue };
+            w.execute(cid, &Command::new("rcs_pulse").with("dir", if e > 0.0 { pos } else { neg }).with("dv", dv)).unwrap();
+            pulses += 1;
+        }
+        run_until(&mut w, 8.0, |w| w.vehicle(cid).unwrap().attached_to.is_some());
+    }
+    for e in w.events.iter().rev().take(4).rev() {
+        println!("{:>8.1} [{:?}] {}", e.t - t0(), e.level, e.text);
+    }
+    println!("{pulses} pulsos");
+    assert_eq!(w.vehicle(cid).unwrap().attached_to, Some(sid), "não acoplou");
+}
+
+/// Gira a atitude pedida em direção a `dir` (inercial), como as teclas.
+fn pilot_point(w: &mut World, id: u32, dir: jaci_sim::math::Vec3) {
+    use jaci_sim::subsystems::AttMode;
+    let v = w.vehicle(id).unwrap();
+    let q = match v.systems.as_ref().map(|s| s.adcs.mode) {
+        Some(AttMode::Inertial(q)) => q,
+        _ => v.att,
+    };
+    let d = q.inv_rotate(dir.unit());
+    let lim = |a: f64| a.to_degrees().clamp(-15.0, 15.0);
+    let (pitch, yaw) = (lim((-d.z).atan2(d.x)), lim(d.y.atan2(d.x)));
+    if pitch.abs() + yaw.abs() > 0.05 {
+        w.execute(id, &Command::new("att_nudge").with("pitch", pitch).with("yaw", yaw)).unwrap();
+    }
+}
+
+#[test]
+fn pouso_na_lua_final_a_mao() {
+    let mut w = scenarios::build("pouso-lua", t0(), 3).unwrap();
+    let id = w.vehicles[0].id;
+    let mut last = f64::INFINITY;
+    run_until(&mut w, 3_600.0, |w| {
+        let a = w.vehicle(id).unwrap().derived.alt;
+        let past = a > last;
+        last = a;
+        past
+    });
+    // PDI com o piloto seguindo o diretor até 800 m; daí em diante, tudo à mão (P66).
+    w.execute(id, &Command::new("manual_steer").with("on", "on")).unwrap();
+    w.execute(id, &Command::new("pdi")).unwrap();
+    let mut next = w.t;
+    let mut manual = false;
+    let end = w.t + 3_600.0;
+    while w.t < end && !w.vehicle(id).unwrap().phase.is_final() {
+        if w.t >= next {
+            if !manual && w.vehicle(id).unwrap().derived.alt < 800.0 {
+                w.execute(id, &Command::new("pdi").with("on", "off")).expect("P66");
+                manual = true;
+            }
+            if manual {
+                // Como um piloto com o DSC: mata a velocidade horizontal e desce devagar.
+                let v = w.vehicle(id).unwrap();
+                let vs = v.v - v.central.surface_velocity(v.r);
+                let up = v.r.unit();
+                let g = v.central.mu() / v.r.norm2();
+                let a_max = v.stages.iter().flat_map(|s| &s.engines).filter(|e| e.lit()).map(|e| e.thrust_vac).sum::<f64>() / v.mass();
+                let alt = v.derived.alt;
+                let horiz = vs.reject(up);
+                let want = -(alt / 20.0).clamp(1.0, 15.0);
+                let a_up = g + (want - vs.dot(up)) * 0.5;
+                let a_side = -horiz * 0.15;
+                let acc = up * a_up + a_side;
+                // Inclinação máxima de 30°.
+                let tilt = (a_side.norm() / a_up.max(0.1)).atan().min(30f64.to_radians());
+                let dir = (up * tilt.cos() + a_side.unit() * if a_side.norm() > 1e-6 { tilt.sin() } else { 0.0 }).unit();
+                pilot_point(&mut w, id, dir);
+                let pct = (acc.dot(dir) / a_max * 100.0).clamp(0.0, 100.0).round();
+                w.execute(id, &Command::new("throttle").with("value", pct)).unwrap();
+            } else {
+                pilot_follows_director(&mut w, id);
+            }
+            next = w.t + 0.5;
+        }
+        w.step(0.25);
+    }
+    for e in w.events.iter().rev().take(4).rev() {
+        println!("{:>8.1} [{:?}] {}", e.t - t0(), e.level, e.text);
+    }
+    let v = w.vehicle(id).unwrap();
+    println!("fase {:?}, propelente {:.0} kg", v.phase, v.stages[0].propellant);
+    assert!(manual, "não assumiu");
+    assert_eq!(v.phase, Phase::Landed, "não pousou");
+}
+
+#[test]
+fn escola_subida_pilotada_do_arquivo() {
+    // O cenário da lição 7: VLM-1 a T-2 min; o aluno liga o CSS e segue o diretor.
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../missoes");
+    let lib = jaci_sim::library::Library::load(&dir);
+    assert!(lib.errors.is_empty(), "{:?}", lib.errors);
+    assert!(lib.lessons.len() >= 9, "lições: {}", lib.lessons.len());
+    let mut w = lib.scenario("escola-subida", t0(), 3).unwrap();
+    let id = w.launch.vehicle.unwrap();
+    w.execute(id, &Command::new("manual_steer").with("on", "on")).unwrap();
+    let id = launch(&mut w);
+    let mut next = w.t;
+    let end = w.t + 1_500.0;
+    while w.t < end && !w.vehicle(id).unwrap().guidance.inserted && !w.vehicle(id).unwrap().phase.is_final() {
+        if w.t >= next {
+            pilot_follows_director(&mut w, id);
+            next = w.t + 1.0;
+        }
+        w.step(0.25);
+    }
+    let (pe, ap, _) = orbit_of(&w, id);
+    println!("escola-subida: {pe:.0} × {ap:.0} km");
+    assert!(w.vehicle(id).unwrap().guidance.inserted && pe > 150.0);
+}

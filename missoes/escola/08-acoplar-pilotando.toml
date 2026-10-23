@@ -1,0 +1,43 @@
+name = "Acoplar pilotando"
+description = "Desacople da estação e volte à porta só com pulsos de RCS"
+order = 8
+scenario = "estacao"
+vehicle = "Cápsula Jaci"
+par_s = 1800
+intro = """
+A cápsula está acoplada na estação. Você vai desacoplar, deixar a nave se afastar e voltar à
+porta pilotando: a página TGT mostra a nave no plano do alvo (V-bar para a frente, R-bar para
+cima), a distância, a taxa e a aproximação máxima. A porta captura a menos de 1,5 m, se
+aproximando a menos de 0,4 m/s.
+"""
+done = "Acoplado na mão! Repare como a nave subia e caía para trás sozinha: é a dinâmica orbital (Hill)."
+
+[[objectives]]
+text = "Abra o console PILOT e ponha a página TGT num MFD."
+hint = "Tecla p. TGT está nas teclas de cima do primeiro MFD."
+until = "ui.view == 'manual'"
+console = "manual"
+
+[[objectives]]
+text = "Desacople no grupo ENCONTRO."
+hint = "DESACOPLAR é perigoso: clique duas vezes (armar e confirmar). A nave sai a 0,1 m/s."
+until = "not docked"
+console = "manual"
+
+[[objectives]]
+text = "Espere a nave se afastar mais de 60 m da estação."
+hint = "Pode acelerar o tempo. Na TGT, veja ela ir para trás e para baixo: uma nave solta não fica parada ao lado da outra."
+until = "not docked and target_range > 60"
+console = "manual"
+
+[[objectives]]
+text = "Volte pilotando (sem APROXIMAR E ACOPLAR) até menos de 20 m."
+hint = "Pulsos pequenos (0,05 a 0,1 m/s): PRO aproxima pela V-bar, RAD+ e RAD− corrigem a altura, NML e ANML o lado. Mantenha a taxa negativa e devagar."
+until = "not docked and target_range < 20 and program == 'none'"
+console = "manual"
+
+[[objectives]]
+text = "Encoste na porta devagar e acople."
+hint = "Abaixo de 0,4 m/s, com R e H perto de zero. Se passar da porta, um pulso RET."
+until = "docked"
+console = "manual"

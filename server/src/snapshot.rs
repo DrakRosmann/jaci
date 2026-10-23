@@ -171,6 +171,9 @@ fn vehicle(w: &World, v: &Vehicle) -> Value {
         "phase_name": v.phase.name(),
         "central": v.central.id(),
         "central_name": v.central.name(),
+        "central_radius": v.central.radius(),
+        // Velocidade em relação ao solo que gira (para o retrógrado de superfície no pouso).
+        "v_surf": v3(v.v - v.central.surface_velocity(v.r)),
         "parent": v.parent,
         "attached_to": v.attached_to,
         "crew": v.crew(),
@@ -249,6 +252,9 @@ fn vehicle(w: &World, v: &Vehicle) -> Value {
         "kick_wait": g.kick_wait,
         "ascent": g.ascent.as_ref().map(|p| json!({"pe": p.target_pe_km, "ap": p.target_ap_km, "inc": p.inclination_deg})),
         "azimuth": g.azimuth,
+        "manual": g.manual,
+        // Para onde o guiamento quer o nariz (diretor de voo), quando ele está calculando.
+        "director": g.att_cmd.map(|q| v3(q.forward())),
     });
     o["fts"] = json!({"installed": v.fts.installed, "armed": v.fts.armed, "autonomous": v.fts.autonomous});
     o["aborts"] = json!(w.abort_modes(v.id));

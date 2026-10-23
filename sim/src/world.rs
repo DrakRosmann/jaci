@@ -406,6 +406,7 @@ impl World {
                 r: v.r,
                 v: v.v,
                 port_offset: v.ports.iter().find(|p| p.occupant.is_none()).map_or(15.0, |p| p.offset),
+                port_free: v.ports.iter().any(|p| p.occupant.is_none()),
             })
             .collect();
         // Terceiros corpos, uma vez por passo para cada corpo central em uso.
@@ -970,8 +971,8 @@ impl World {
             "att_nudge" => {
                 // Pilotagem manual: gira a atitude alvo no referencial do corpo
                 // (arfagem em Y, guinada em Z, rolamento em X) e o ADCS persegue.
-                if veh!().guidance.program != Program::None {
-                    return Err("o guiamento está no controle".into());
+                if veh!().guidance.program != Program::None && !veh!().guidance.manual {
+                    return Err("o guiamento está no controle (ligue a pilotagem manual)".into());
                 }
                 let (p, y, r) = (cmd.num("pitch").unwrap_or(0.0), cmd.num("yaw").unwrap_or(0.0), cmd.num("roll").unwrap_or(0.0));
                 let att = veh!().att;
@@ -987,6 +988,21 @@ impl World {
                     .normalized();
                 s.adcs.mode = AttMode::Inertial(q);
                 format!("atitude manual: arfagem {p:+.1}°, guinada {y:+.1}°, rolamento {r:+.1}°")
+            }
+            "manual_steer" => {
+                let on = cmd.str("on").ok_or("falta o estado")? == "on";
+                let att = veh!().att;
+                veh!().guidance.manual = on;
+                if on {
+                    // Começa segurando a atitude de agora; as teclas giram a partir dela.
+                    sys!().adcs.mode = AttMode::Inertial(att);
+                    "pilotagem manual: siga o diretor de voo".into()
+                } else {
+                    if veh!().guidance.program != Program::None {
+                        sys!().adcs.mode = AttMode::Guidance;
+                    }
+                    "guiamento automático".into()
+                }
             }
             "att_mode" => {
                 let target = cmd.str("target").and_then(|s| s.parse().ok()).or(cmd.num("target").map(|x| x as u32));
@@ -1057,10 +1073,18 @@ impl World {
             }
             "undock" => {
                 let host = veh!().attached_to.ok_or("não está acoplado")?;
+                // Solta na porta (atrás do anfitrião, na V-bar), parada em relação a ele, e se afasta a 0,1 m/s.
+                let (hr, hv, offset) = self
+                    .vehicle(host)
+                    .map(|h| (h.r, h.v, h.ports.iter().find(|p| p.occupant == Some(vid)).map_or(15.0, |p| p.offset)))
+                    .ok_or("anfitrião não existe")?;
+                let (_, y, z) = crate::orbit::lvlh_axes(hr, hv);
+                let n = (veh!().central.mu() / hr.norm().powi(3)).sqrt();
+                let dr = -y * offset;
                 veh!().attached_to = None;
                 veh!().phase = Phase::Orbit;
-                let away = -veh!().v.unit() * 0.1;
-                veh!().v += away;
+                veh!().r = hr + dr;
+                veh!().v = hv + (z * n).cross(dr) - y * 0.1;
                 if let Some(h) = self.vehicle_mut(host) {
                     for p in &mut h.ports {
                         if p.occupant == Some(vid) {
@@ -1200,6 +1224,18 @@ impl World {
                 let lon = cmd.num("lon").ok_or("falta a longitude")?;
                 veh!().guidance.landing_target = Some((lat, lon));
                 format!("alvo {:.2}°, {:.2}°", lat, lon)
+            }
+            "pdi" if cmd.str("on") == Some("off") => {
+                // Como o P66 do Apollo: o piloto assume a descida (atitude e potência); o motor continua aceso.
+                if veh!().guidance.program != Program::PoweredDescent {
+                    return Err("a descida propulsada não está ligada".into());
+                }
+                let att = veh!().att;
+                veh!().guidance.program = Program::None;
+                veh!().guidance.att_cmd = None;
+                sys!().adcs.mode = AttMode::Inertial(att);
+                self.event(Some(vid), Level::Warn, format!("Descida manual a {:.0} m: o piloto assume atitude e potência", veh!().derived.alt));
+                "descida manual".into()
             }
             "pdi" => {
                 let mut out = StepOutput::default();

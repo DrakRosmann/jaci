@@ -287,6 +287,10 @@ function Adi({ v, height }: { v: Vehicle; height: number }) {
       const tg = prefs.adiTarget && vehicles ? pickTarget(v, vehicles) : undefined
       const rel = tg ? relative(v, tg) : null
       if (rel) sym.push([rel.los, '◎', C.amber])
+      // Retrógrado em relação ao solo, perto do chão: para onde apontar o motor no pouso.
+      const vs = v.v_surf as V3 | undefined
+      const surf = prefs.adiMarkers && vs && v.alt < 200 && Math.hypot(...vs) > 1 ? (vs.map((x) => -x) as V3) : null
+      if (surf) sym.push([surf, '⊘', C.line])
       ctx.font = 'bold 18px ui-monospace, monospace'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
@@ -298,6 +302,21 @@ function Adi({ v, height }: { v: Vehicle; height: number }) {
       }
       ctx.textAlign = 'left'
       ctx.textBaseline = 'alphabetic'
+      // Diretor de voo: as barras cruzadas mostram para onde o guiamento quer o nariz.
+      const fd = prefs.adiDirector && v.guidance?.director ? offsets(v.guidance.director as V3, q) : null
+      if (fd) {
+        const lim = 30
+        const dx = fd.front ? Math.max(-lim, Math.min(lim, fd.dx)) : Math.sign(fd.dx || 1) * lim
+        const dy = fd.front ? Math.max(-lim, Math.min(lim, fd.dy)) : Math.sign(fd.dy || 1) * lim
+        ctx.strokeStyle = C.magenta
+        ctx.lineWidth = 3
+        ctx.beginPath()
+        ctx.moveTo(cx - R * 0.5, cy - dy * ppd)
+        ctx.lineTo(cx + R * 0.5, cy - dy * ppd)
+        ctx.moveTo(cx + dx * ppd, cy - R * 0.5)
+        ctx.lineTo(cx + dx * ppd, cy + R * 0.5)
+        ctx.stroke()
+      }
       // Aeronave fixa no centro.
       ctx.strokeStyle = C.amber
       ctx.lineWidth = 3
@@ -378,7 +397,14 @@ function Adi({ v, height }: { v: Vehicle; height: number }) {
       ctx.textAlign = 'left'
       ctx.fillStyle = C.dim
       ctx.font = '10px ui-monospace, monospace'
-      ctx.fillText(`${prefs.adiMarkers ? '⊕ PRO  ⊗ RET  ▲ NML  ◇ RAD  ' : ''}${nd ? `✚ ${t('MNV')} ${num(offsets(nd, q).angle, 1)}°  ` : ''}${rel ? `◎ ${tg!.name}` : ''}`, 10, h - 8)
+      ctx.fillText(`${prefs.adiMarkers ? '⊕ PRO  ⊗ RET  ▲ NML  ◇ RAD  ' : ''}${surf ? `⊘ ${t('SOLO')}  ` : ''}${nd ? `✚ ${t('MNV')} ${num(offsets(nd, q).angle, 1)}°  ` : ''}${rel ? `◎ ${tg!.name}` : ''}`, 10, h - 8)
+      if (fd) {
+        ctx.fillStyle = fd.angle > 5 ? C.amber : C.magenta
+        ctx.textAlign = 'right'
+        ctx.font = 'bold 12px ui-monospace, monospace'
+        ctx.fillText(`FD ${num(fd.angle, 1)}°${v.guidance?.manual ? ` · ${t('MANUAL')}` : ''}`, w - 10, 66)
+        ctx.textAlign = 'left'
+      }
     },
     [v, height, prefs, vehicles],
   )

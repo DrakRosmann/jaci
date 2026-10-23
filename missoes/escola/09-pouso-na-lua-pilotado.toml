@@ -1,0 +1,42 @@
+name = "Pouso na Lua pilotado"
+description = "Descida propulsada seguindo o diretor e o pouso final à mão, como o P66 do Apollo"
+order = 9
+scenario = "pouso-lua"
+vehicle = "Módulo lunar Jaci"
+par_s = 1500
+intro = """
+O módulo lunar chega ao perilúnio de 15 km. Você vai comandar a descida propulsada com a
+pilotagem manual: o programa calcula a potência e o diretor mostra para onde apontar. Abaixo de
+1 km, você assume tudo — atitude e potência —, como Armstrong na Apollo 11.
+"""
+done = "Pousou! A página DSC mostrou o essencial: altura, velocidade vertical e a margem da queima de parada."
+
+[[objectives]]
+text = "Abra o console PILOT, ligue a PILOTAGEM MANUAL (CSS) e ponha as páginas DSC e MNV nos MFDs."
+hint = "Tecla p; o botão fica no grupo ATITUDE. DSC e MNV estão nas teclas do primeiro MFD."
+until = "manual"
+console = "manual"
+
+[[objectives]]
+text = "No perilúnio, comande a descida propulsada (PDI)."
+hint = "Grupo RECUPERAÇÃO E SISTEMAS. Espere a altitude parar de cair (uns 10 min; pode acelerar o tempo)."
+until = "program == 'powereddescent'"
+console = "manual"
+
+[[objectives]]
+text = "Siga o diretor (barras magenta) até 1 km de altura."
+hint = "Ligue \"Pilotar pelo teclado\". O módulo começa de costas, freando; perto do chão vai ficando em pé."
+until = "program == 'powereddescent' and alt < 1"
+console = "manual"
+
+[[objectives]]
+text = "Assuma a descida: ASSUMIR (P66) no grupo RECUPERAÇÃO E SISTEMAS."
+hint = "O motor continua aceso. Daqui em diante, R/F mudam a potência e as setas inclinam a nave."
+until = "program == 'none' and alt < 1 and phase != 'landed'"
+console = "manual"
+
+[[objectives]]
+text = "Pouse devagar: menos de 3,5 m/s na vertical."
+hint = "Nariz no ⊘ (retrógrado de superfície) para matar a velocidade horizontal; depois em pé. Potência perto de 55% segura a nave; desça a 1–2 m/s."
+until = "phase == 'landed'"
+console = "manual"

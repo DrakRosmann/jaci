@@ -499,6 +499,12 @@ pub struct Guidance {
     /// começa a descida propulsada (pouso em Marte).
     #[serde(default)]
     pub auto_pdi_alt: Option<f64>,
+    /// Pilotagem manual com diretor de voo (CSS, como no ônibus espacial): o
+    /// guiamento continua calculando a atitude (`att_cmd`), a potência e o
+    /// corte, mas quem aponta a nave é o piloto; a atitude do guiamento só
+    /// aparece no diretor.
+    #[serde(default)]
+    pub manual: bool,
 }
 
 /// Powered Explicit Guidance: fr(t) = A + B·t (+ gravidade menos centrífuga),
@@ -547,6 +553,7 @@ impl Default for Guidance {
             peg: None,
             legacy_ascent: false,
             auto_pdi_alt: None,
+            manual: false,
         }
     }
 }
@@ -646,6 +653,8 @@ pub struct TargetInfo {
     pub r: Vec3,
     pub v: Vec3,
     pub port_offset: f64,
+    /// Tem porta livre (pode receber uma nave).
+    pub port_free: bool,
 }
 
 /// Contexto de um passo.
@@ -1676,7 +1685,7 @@ impl Vehicle {
             Some(s) => s.adcs.mode,
             None => return None,
         };
-        if let Some(q) = self.guidance.att_cmd {
+        if let Some(q) = self.guidance.att_cmd.filter(|_| !self.guidance.manual) {
             if mode == AttMode::Guidance || self.guidance.program != Program::None || self.guidance.nodes.iter().any(|n| n.executing) {
                 return Some(q);
             }
@@ -1710,7 +1719,7 @@ impl Vehicle {
                 .find(|x| x.id == id && x.central == self.central)
                 .map(|x| Quat::look((x.r - r).unit(), -up)),
             AttMode::Inertial(q) => Some(q),
-            AttMode::Guidance => self.guidance.att_cmd,
+            AttMode::Guidance => self.guidance.att_cmd.filter(|_| !self.guidance.manual),
         }
     }
 

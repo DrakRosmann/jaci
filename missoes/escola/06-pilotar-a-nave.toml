@@ -1,0 +1,36 @@
+name = "Pilotar a nave"
+description = "O console PILOT: modos de atitude, a nave girada à mão e pulsos de RCS"
+order = 6
+scenario = "retorno"
+vehicle = "Cápsula Jaci"
+par_s = 900
+intro = """
+A cápsula está numa órbita de uns 400 × 410 km. Você vai usar o console de controle manual
+(PILOT): os MFDs, o painel de chaves e o teclado. No fim, vai circularizar a órbita só com pulsos
+de RCS, sem o planejador.
+"""
+done = "Órbita circular, pilotando! Os mesmos pulsos servem para aproximar e acoplar na estação."
+
+[[objectives]]
+text = "Abra o console de Controle manual (PILOT)."
+hint = "No menu à esquerda, ou a tecla p."
+until = "ui.view == 'manual'"
+console = "manual"
+
+[[objectives]]
+text = "No grupo ATITUDE, aponte a nave para o prógrado."
+hint = "Botão PRO. No ADI, o ⊕ vai para o centro do horizonte artificial."
+until = "att_mode == 'prograde'"
+console = "manual"
+
+[[objectives]]
+text = "Agora gire a nave à mão: ligue \"Pilotar pelo teclado\" e use W/S, A/D e Q/E (ou as setas do painel)."
+hint = "Cada toque gira o passo escolhido (5° por padrão). A nave passa a segurar a atitude que você deixou."
+until = "att_mode == 'inertial'"
+console = "manual"
+
+[[objectives]]
+text = "Circularize com pulsos de RCS: no apoastro, pulsos prógrados (PRO, ou I no teclado) até o periastro passar de 406 km com o apoastro abaixo de 413 km."
+hint = "Na página ORB, \"→Ap\" diz quanto falta para o apoastro (acelere o tempo até lá). Uns 2 m/s bastam: pulsos de 0,5 ou 1 m/s. Pulsos no apoastro sobem o periastro."
+until = "orb.pe > 406 and orb.ap < 413"
+console = "manual"

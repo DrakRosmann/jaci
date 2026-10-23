@@ -70,6 +70,7 @@ function Annunciators({ v }: { v: Vehicle }) {
     [t('MODO SEGURO'), v.safe_mode ? 'amber' : 'off'],
     [t('TERM ARMADA'), v.fts?.armed ? 'red' : 'off'],
     [t('GUIAMENTO'), v.guidance?.program && v.guidance.program !== 'none' ? 'green' : 'off'],
+    [t('PILOTO MANUAL'), v.guidance?.manual ? 'amber' : 'off'],
     [t('QUEIMA'), nn?.executing ? 'green' : nn && nn.t - now < 120 ? 'amber' : 'off'],
     // Só para quem tem RCS (satélites com rodas de reação não têm propelente de RCS).
     [t('RCS BAIXO'), sys && sys.adcs.rcs_prop > 0 && sys.adcs.rcs_prop < 5 ? 'amber' : 'off'],
@@ -313,6 +314,20 @@ function ControlPanel({ v, replay }: { v: Vehicle; replay: boolean }) {
       )}
       {show('att') && (
         <Group title={t('ATITUDE')}>
+          {hasAdcs && (
+            <div className="row">
+              <CmdButton
+                vehicle={id}
+                cmd="manual_steer"
+                args={{ on: v.guidance?.manual ? 'off' : 'on' }}
+                className={`small ${v.guidance?.manual ? 'active' : ''}`}
+                title={t('O piloto aponta a nave seguindo as barras do diretor (FD); o guiamento continua com a potência e o corte')}
+              >
+                {v.guidance?.manual ? t('PILOTAGEM MANUAL (CSS) · LIGADA') : t('PILOTAGEM MANUAL (CSS)')}
+              </CmdButton>
+              {v.guidance?.director && <span className="small muted">{t('siga as barras magenta do FD no ADI')}</span>}
+            </div>
+          )}
           <div className="row">
             {att('prograde', 'PRO')}
             {att('retrograde', 'RET')}
@@ -536,6 +551,13 @@ function ControlPanel({ v, replay }: { v: Vehicle; replay: boolean }) {
                 </CmdButton>
               </Guarded>
             )}
+            {v.guidance?.program === 'powereddescent' && (
+              <Guarded label={t('ASSUMIR (P66)')}>
+                <CmdButton vehicle={id} cmd="pdi" args={{ on: 'off' }} title={t('O programa sai e o motor continua aceso: você controla atitude e potência')}>
+                  {t('ASSUMIR A DESCIDA')}
+                </CmdButton>
+              </Guarded>
+            )}
             {v.kind === 'shuttle' && (
               <CmdButton vehicle={id} cmd="gear" className={v.gear_down ? 'active' : ''}>
                 {t('TREM')}
@@ -611,7 +633,7 @@ function Customize({ onClose }: { onClose: () => void }) {
       ))}
     </div>
   )
-  const check = (field: 'annunciators' | 'adiMarkers' | 'adiNode' | 'adiTarget', label: string) => (
+  const check = (field: 'annunciators' | 'adiMarkers' | 'adiNode' | 'adiTarget' | 'adiDirector', label: string) => (
     <label>
       <input type="checkbox" checked={p[field]} onChange={(e) => setPilotPrefs({ [field]: e.target.checked })} /> {label}
     </label>
@@ -660,6 +682,7 @@ function Customize({ onClose }: { onClose: () => void }) {
         {check('adiMarkers', t('Marcadores da órbita (prógrado, normal, radial)'))}
         {check('adiNode', t('Vetor da próxima queima (✚)'))}
         {check('adiTarget', t('Direção do alvo (◎)'))}
+        {check('adiDirector', t('Barras do diretor de voo (FD)'))}
         <h4>{t('Grupos do painel')}</h4>
         <div className="checks">
           {GROUPS.map(([g, name]) => (

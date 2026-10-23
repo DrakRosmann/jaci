@@ -36,7 +36,16 @@ pub fn run(v: &mut Vehicle, env: &Env, h: f64, out: &mut StepOutput) {
     auto_entry(v, t, out);
     chutes(v, out);
     auto_pdi(v, out);
+    manual_capture(v, env, out);
     post_separation(v, h, out);
+    // Pilotagem manual: os programas que pedem o ADCS no guiamento não tomam a
+    // nave do piloto; ela segura a atitude de agora até a próxima tecla.
+    if v.guidance.manual {
+        let att = v.att;
+        if let Some(sys) = v.systems.as_mut().filter(|s| s.adcs.mode == AttMode::Guidance) {
+            sys.adcs.mode = AttMode::Inertial(att);
+        }
+    }
 }
 
 // ───────────────────────── Subida ─────────────────────────
@@ -620,18 +629,20 @@ fn nodes(v: &mut Vehicle, t: f64, h: f64, out: &mut StepOutput) {
     let t_ign = ignition_time(v, &v.guidance.nodes[i]);
     let n = v.guidance.nodes[i].clone();
     if !n.executing {
-        if t >= t_ign - ORIENT_LEAD {
+        // O RCS de translação empurra em qualquer eixo: o pulso não gira a nave.
+        if !n.rcs && t >= t_ign - ORIENT_LEAD {
             // Orientação para a queima.
             let dir = rtn_to_inertial(v.r, v.v, n.dv_rtn).unit();
             v.guidance.att_cmd = Some(Quat::look(dir, -v.r.unit()));
-            if let Some(sys) = &mut v.systems {
+            // Na pilotagem manual quem aponta é o piloto (o diretor mostra para onde).
+            if let Some(sys) = v.systems.as_mut().filter(|_| !v.guidance.manual) {
                 if sys.adcs.mode != AttMode::Guidance {
                     sys.adcs.mode = AttMode::Guidance;
                 }
             }
         }
         let dir_now = rtn_to_inertial(v.r, v.v, n.dv_rtn).unit();
-        let aligned = v.att.forward().angle(dir_now) < 8f64.to_radians();
+        let aligned = n.rcs || v.att.forward().angle(dir_now) < 8f64.to_radians();
         if t >= t_ign && !aligned && t < t_ign + 90.0 {
             // Ainda girando: espera alinhar (até 90 s de atraso).
             return;
@@ -657,7 +668,9 @@ fn nodes(v: &mut Vehicle, t: f64, h: f64, out: &mut StepOutput) {
     // Queimas longas seguem a direção no referencial orbital (RTN), que gira
     // com a órbita: uma retroqueima continua retrógrada até o fim.
     let dir = rtn_to_inertial(v.r, v.v, n.dv_rtn).unit();
-    v.guidance.att_cmd = Some(Quat::look(dir, -v.r.unit()));
+    if !n.rcs {
+        v.guidance.att_cmd = Some(Quat::look(dir, -v.r.unit()));
+    }
     let accel = if n.rcs {
         let f = v.systems.as_ref().map_or(0.0, |s| s.adcs.rcs_force);
         v.guidance.rcs_accel = dir * (f / mass);
@@ -1090,12 +1103,7 @@ fn docking(v: &mut Vehicle, env: &Env, out: &mut StepOutput) {
     }
     let (x, y, z) = lvlh_axes(tg.r, tg.v);
     let n = (v.central.mu() / tg.r.norm().powi(3)).sqrt();
-    // Velocidade relativa no LVLH (que gira com ω = n ẑ).
-    let dr = v.r - tg.r;
-    let rho = Vec3::new(dr.dot(x), dr.dot(y), dr.dot(z));
-    let omega = z * n;
-    let dv = v.v - tg.v - omega.cross(dr);
-    let rho_dot = Vec3::new(dv.dot(x), dv.dot(y), dv.dot(z));
+    let (rho, rho_dot) = relative_lvlh(v, &tg);
     let port = Vec3::new(0.0, -tg.port_offset, 0.0);
     let range = (rho - port).norm();
     if rho.norm() > 8_000.0 {
@@ -1131,6 +1139,36 @@ fn docking(v: &mut Vehicle, env: &Env, out: &mut StepOutput) {
         v.guidance.rcs_accel = Vec3::ZERO;
         v.guidance.program = Program::None;
         out.docked_to = Some(tid);
+    }
+}
+
+/// Posição e velocidade da nave no LVLH do alvo (que gira com a órbita dele).
+fn relative_lvlh(v: &Vehicle, tg: &TargetInfo) -> (Vec3, Vec3) {
+    let (x, y, z) = lvlh_axes(tg.r, tg.v);
+    let n = (v.central.mu() / tg.r.norm().powi(3)).sqrt();
+    let dr = v.r - tg.r;
+    let dv = v.v - tg.v - (z * n).cross(dr);
+    (Vec3::new(dr.dot(x), dr.dot(y), dr.dot(z)), Vec3::new(dv.dot(x), dv.dot(y), dv.dot(z)))
+}
+
+/// Acoplamento pilotado: sem o programa automático, a nave que chega à porta
+/// livre de outra (a menos de 1,5 m, se aproximando a menos de 0,4 m/s) é
+/// capturada, como na sonda e no cone de uma porta de verdade.
+fn manual_capture(v: &Vehicle, env: &Env, out: &mut StepOutput) {
+    if v.attached_to.is_some() || v.guidance.program != Program::None || v.systems.is_none() || v.phase.is_final() {
+        return;
+    }
+    for tg in env.targets.iter().filter(|x| x.id != v.id && x.central == v.central && x.port_free) {
+        if (tg.r - v.r).norm() > 100.0 {
+            continue;
+        }
+        let (rho, rho_dot) = relative_lvlh(v, tg);
+        let to_port = rho - Vec3::new(0.0, -tg.port_offset, 0.0);
+        if to_port.norm() < 1.5 && rho_dot.norm() < 0.4 && to_port.dot(rho_dot) < 0.0 {
+            out.docked_to = Some(tg.id);
+            out.events.push((Level::Info, format!("Contato a {:.2} m/s", rho_dot.norm())));
+            return;
+        }
     }
 }
 

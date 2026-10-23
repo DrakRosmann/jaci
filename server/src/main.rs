@@ -1092,6 +1092,22 @@ fn handle(ctx: &Ctx, conn: u64, msg: &Value) -> Option<Value> {
             let pc = planner::porkchop(from, to, start, g("span_days", 400.0), g("tof_min", 100.0), g("tof_max", 400.0), g("n", 40.0) as usize);
             return Some(json!({"type": "porkchop", "req": req, "data": pc}));
         }
+        "flyby" => {
+            let body = |k: &str, d: Body| msg.get(k).and_then(|x| x.as_str()).and_then(Body::from_id).unwrap_or(d);
+            let (from, via, to) = (body("from", Body::Earth), body("via", Body::Venus), body("to", Body::Mars));
+            let start = msg.get("start").and_then(|x| x.as_str()).and_then(parse_utc).unwrap_or(a.world.t);
+            let g = |k: &str, d: f64| msg.get(k).and_then(|x| x.as_f64()).unwrap_or(d);
+            drop(a);
+            if from == via || via == to || [from, via, to].iter().any(|b| matches!(b, Body::Sun | Body::Moon)) {
+                return Some(json!({"type": "flyby", "req": req, "ok": false, "error": "escolha três planetas, o do meio diferente dos outros"}));
+            }
+            // A busca leva um ou dois segundos: fora da tarefa que atende as mensagens.
+            let span = g("span_days", 800.0).clamp(30.0, 3_000.0);
+            let (t1, t2) = ((g("tof1_min", 100.0), g("tof1_max", 300.0)), (g("tof2_min", 150.0), g("tof2_max", 600.0)));
+            let n = g("n", 24.0) as usize;
+            let s = tokio::task::block_in_place(|| planner::flyby_search(from, via, to, start, span, t1, t2, n));
+            return Some(json!({"type": "flyby", "req": req, "ok": true, "data": s}));
+        }
         "dictionary" => {
             let mut d = snapshot::dictionary(&a);
             d["req"] = req;
