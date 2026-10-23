@@ -447,3 +447,28 @@ fn peg_guia_o_estagio_superior() {
     // O tempo até o corte cai junto com o relógio.
     assert!((t_go - t_go2 - 30.0).abs() < 8.0, "T de {t_go:.0} para {t_go2:.0} em 30 s");
 }
+
+#[test]
+fn escola_o_vazamento_da_licao_se_resolve() {
+    // A lição 4 tem de dar para cumprir: o vazamento gera alarme, fechar a
+    // escotilha isola, e a pressão volta acima de 95 kPa.
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../missoes");
+    let lib = jaci_sim::library::Library::load(&dir);
+    let mut w = lib.scenario("escola-vazamento", t0(), 3).unwrap();
+    let id = w.vehicles.iter().find(|v| v.name == "Estação espacial").unwrap().id;
+    let mut secs = 0;
+    while !w.alarms.iter().any(|a| a.vehicle == id && a.active) && secs < 6 * 3_600 {
+        w.step(1.0);
+        secs += 1;
+    }
+    println!("alarme em {secs} s: {:?}", w.alarms.iter().map(|a| &a.name).collect::<Vec<_>>());
+    assert!(secs < 6 * 3_600, "o vazamento não gerou alarme");
+    let v = w.vehicle(id).unwrap();
+    let leaking = v.systems.as_ref().unwrap().eclss.as_ref().unwrap().modules.iter().find(|m| m.leak_area > 0.0).unwrap().name.clone();
+    assert_eq!(leaking, "Laboratório");
+    w.execute(id, &Command::new("hatch").with("module", leaking.as_str()).with("closed", "on")).unwrap();
+    run_until(&mut w, 4.0 * 3_600.0, |w| w.vehicle(id).unwrap().systems.as_ref().unwrap().eclss.as_ref().unwrap().pressure() > 95.0);
+    let p = w.vehicle(id).unwrap().systems.as_ref().unwrap().eclss.as_ref().unwrap().pressure();
+    println!("pressão depois de isolar: {p:.1} kPa");
+    assert!(p > 95.0, "pressão {p}");
+}

@@ -1274,6 +1274,9 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
             for (id, f) in &lib.procedures {
                 list.push(json!({"sub": "procedimentos", "id": id, "name": f.name}));
             }
+            for (id, f) in &lib.lessons {
+                list.push(json!({"sub": "escola", "id": id, "name": f.name}));
+            }
             for (f, e) in &lib.errors {
                 let (sub, file) = f.split_once('/').unwrap_or(("", f));
                 list.push(json!({"sub": sub, "id": file.trim_end_matches(".toml"), "name": null, "error": e}));

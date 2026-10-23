@@ -686,6 +686,34 @@ impl Eclss {
         self.ppo2() + self.ppn2() + self.ppco2()
     }
 
+    /// Fecha ou abre a escotilha de um módulo. Fechando, o ar dele sai do volume
+    /// comum e fica preso no módulo, na pressão do momento; abrindo, volta e se
+    /// mistura (com a composição atual da cabine).
+    pub fn set_isolated(&mut self, k: usize, closed: bool) {
+        let Some(m) = self.modules.get(k) else { return };
+        if m.isolated == closed {
+            return;
+        }
+        let t = self.temp_c + 273.15;
+        if closed {
+            let frac = (m.volume / self.volume()).min(1.0);
+            let p = self.pressure();
+            self.o2_kg *= 1.0 - frac;
+            self.n2_kg *= 1.0 - frac;
+            self.co2_kg *= 1.0 - frac;
+            self.modules[k].pressure_kpa = p;
+            self.modules[k].isolated = true;
+        } else {
+            let n = self.modules[k].pressure_kpa * 1e3 * m.volume / (R_GAS * t);
+            let p = self.pressure();
+            let (xo, xn, xc) = if p > 1.0 { (self.ppo2() / p, self.ppn2() / p, self.ppco2() / p) } else { (0.21, 0.786, 0.0004) };
+            self.o2_kg += n * xo * M_O2;
+            self.n2_kg += n * xn * M_N2;
+            self.co2_kg += n * xc * M_CO2;
+            self.modules[k].isolated = false;
+        }
+    }
+
     /// Enche as massas de gás para 101,3 kPa, 21 % de O₂, nos módulos abertos.
     pub fn fill_standard(&mut self) {
         let n = 101.325e3 * self.volume() / (R_GAS * (self.temp_c + 273.15));
@@ -770,6 +798,42 @@ impl Eclss {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn isolar_um_modulo_nao_muda_a_pressao() {
+        let mut e = Eclss {
+            crew: 0,
+            modules: vec![
+                CabinModule { name: "A".into(), volume: 100.0, isolated: false, leak_area: 0.0, pressure_kpa: 0.0 },
+                CabinModule { name: "B".into(), volume: 50.0, isolated: false, leak_area: 0.0, pressure_kpa: 0.0 },
+            ],
+            o2_kg: 0.0,
+            n2_kg: 0.0,
+            co2_kg: 0.0,
+            water_kg: 0.0,
+            temp_c: 22.0,
+            humidity: 0.4,
+            o2_tank_kg: 0.0,
+            n2_tank_kg: 0.0,
+            o2_gen_rate: 0.0,
+            o2_gen_on: false,
+            scrubber_rate: 0.0,
+            scrubber_on: false,
+            scrubber_capacity: UNLIMITED,
+            auto_press: false,
+            fans_on: true,
+            heart_rate: 70.0,
+        };
+        e.fill_standard();
+        let p0 = e.pressure();
+        e.set_isolated(1, true);
+        assert!((e.pressure() - p0).abs() < 0.01, "{} → {}", p0, e.pressure());
+        assert!((e.modules[1].pressure_kpa - p0).abs() < 0.01);
+        // O módulo despressurizado e reaberto baixa a pressão de todos.
+        e.modules[1].pressure_kpa = 0.0;
+        e.set_isolated(1, false);
+        assert!((e.pressure() - p0 * 100.0 / 150.0).abs() < 0.05, "{}", e.pressure());
+    }
 
     #[test]
     fn bateria_descarrega_no_eclipse() {

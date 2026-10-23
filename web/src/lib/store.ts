@@ -26,6 +26,7 @@ export type View =
   | 'timeline'
   | 'custom'
   | 'wall'
+  | 'school'
 
 export interface UiState {
   view: View
@@ -35,7 +36,7 @@ export interface UiState {
   navCollapsed: boolean
 }
 
-export const VIEWS: View[] = ['overview', 'launch', 'trajectory', 'orbit', 'rendezvous', 'systems', 'commands', 'telemetry', 'stations', 'interplanetary', 'procedures', 'instructor', 'ksp', 'timeline', 'custom', 'wall']
+export const VIEWS: View[] = ['overview', 'launch', 'trajectory', 'orbit', 'rendezvous', 'systems', 'commands', 'telemetry', 'stations', 'interplanetary', 'procedures', 'instructor', 'ksp', 'timeline', 'custom', 'wall', 'school']
 
 /** Console e língua pedidos no endereço: /#launch abre o lançamento; /#orbit&en, a órbita em inglês. */
 export function parseHash(hash: string): Partial<Pick<UiState, 'view' | 'lang'>> {
@@ -154,7 +155,7 @@ class Store {
         break
       case 'library':
         // Um arquivo de missão foi salvo: cenários, catálogo e procedimentos novos.
-        if (this.hello) this.hello = { ...this.hello, scenarios: d.scenarios, catalog: d.catalog, procedures: d.procedures }
+        if (this.hello) this.hello = { ...this.hello, scenarios: d.scenarios, catalog: d.catalog, procedures: d.procedures, lessons: d.lessons }
         break
       case 'history':
         // Telemetria de antes de conectar, para os gráficos.

@@ -21,6 +21,20 @@ export interface ProcedureFile {
   steps: { kind: 'note' | 'check' | 'cmd' | 'wait'; text: string; cmd?: string; args?: Record<string, unknown>; hazardous?: boolean; until?: string }[]
 }
 
+/** Lição da escola de controle (missoes/escola). */
+export interface LessonFile {
+  id: string
+  name: string
+  description: string
+  order: number
+  scenario?: string | null
+  intro: string
+  done: string
+  vehicle?: string | null
+  par_s?: number | null
+  objectives: { text: string; hint: string; until: string; console?: string | null; vehicle?: string | null }[]
+}
+
 /** Posição da sala de controle e o que ela comanda (vem do servidor). */
 export interface Role {
   id: string
@@ -86,6 +100,8 @@ export interface Hello {
   catalog: { id: string; name: string; kind: string; description: string; file?: boolean }[]
   /** Procedimentos dos arquivos de missão. */
   procedures?: ProcedureFile[]
+  /** Lições da escola de controle. */
+  lessons?: LessonFile[]
   commands: CmdDef[]
   faults: { id: string; name: string; arg: string }[]
   stations: Station[]

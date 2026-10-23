@@ -1407,4 +1407,22 @@ export const EN: Record<string, string> = {
   'Telão: tela cheia para a parede da sala': 'Wall display: full screen for the room wall',
   'Telão': 'Wall display',
   'Telão (tela cheia para a parede da sala)': 'Wall display (full screen for the room wall)',
+
+  // ── Escola ──
+  'Lição': 'Lesson',
+  'ESCOLA': 'SCHOOL',
+  'Sair da lição': 'Leave the lesson',
+  'estrelas': 'stars',
+  'dicas': 'hints',
+  'Voltar à escola': 'Back to school',
+  'Me leve lá': 'Take me there',
+  'Dica': 'Hint',
+  'Escola de controle': 'Control school',
+  'Missões curtas para aprender a sala: cada uma carrega um cenário e dá objetivos; o Jaci confere sozinho quando você cumpre cada um. Sem dicas e no tempo, três estrelas.': 'Short missions to learn the room: each loads a scenario and sets objectives; Jaci checks on its own when you meet each one. No hints and on time: three stars.',
+  'Saia da reprodução para começar uma lição.': 'Leave replay to start a lesson.',
+  'Nenhuma lição em missoes/escola.': 'No lessons in missoes/escola.',
+  'Em andamento': 'In progress',
+  'Fazer de novo': 'Do it again',
+  'objetivos': 'objectives',
+  'não deu para carregar o cenário': 'could not load the scenario',
 }

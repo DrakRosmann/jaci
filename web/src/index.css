@@ -631,6 +631,68 @@ table.big td {
   }
 }
 
+.lesson-panel {
+  position: fixed;
+  right: 14px;
+  bottom: 230px;
+  width: min(360px, calc(100vw - 28px));
+  z-index: 44;
+  background: var(--panel);
+  border: 1px solid #4b3a8a;
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 10px 40px #000c;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lesson-panel header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lesson-panel header b {
+  flex: 1;
+}
+.lesson-steps {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 210px;
+  overflow-y: auto;
+}
+.lesson-steps li {
+  color: var(--muted);
+}
+.lesson-steps li.ok {
+  color: var(--good);
+}
+.lesson-steps li.now {
+  color: var(--text);
+  font-weight: 600;
+}
+.lesson-panel .hint {
+  margin: 0;
+  background: #2a2210;
+  border-left: 3px solid var(--warn);
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+.stars {
+  color: var(--warn);
+  font-size: 22px;
+  letter-spacing: 2px;
+}
+.stars.small {
+  font-size: 13px;
+}
+.stars .muted {
+  color: var(--line);
+}
+
 .sound {
   position: relative;
   display: flex;

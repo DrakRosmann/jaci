@@ -108,9 +108,37 @@ export function parse(src: string): Expr {
   return e
 }
 
+/** O que a tela sabe além do instantâneo (console aberto, veículo selecionado). */
+export interface UiCtx {
+  view?: string
+  selected?: string
+}
+
 /** Valor de um nome: campos conhecidos, depois telemetria pelo id. */
-function lookup(name: string, v: Vehicle, s: Snapshot): number | string | boolean | null {
+function lookup(name: string, v: Vehicle, s: Snapshot, ui?: UiCtx): number | string | boolean | null {
   switch (name) {
+    case 'ui.view':
+      return ui?.view ?? null
+    case 'selected':
+      return ui?.selected ?? null
+    case 'warp':
+      return s.replay ? s.replay.speed : s.warp
+    case 'launch.polled':
+      return s.launch.positions.length > 0 && s.launch.positions.every((p) => p.polled != null)
+    case 'burns':
+      return (v.nodes ?? []).filter((n) => !n.done).length
+    case 'alarms':
+      return s.alarms.filter((a) => a.vehicle === v.id && a.active).length
+    case 'acked':
+      return s.alarms.filter((a) => a.vehicle === v.id).every((a) => a.acked)
+    case 'leak_isolated': {
+      const mods = v.systems?.eclss?.modules ?? []
+      return mods.some((m) => m.leak) && mods.every((m) => !m.leak || m.isolated)
+    }
+    case 'safe_mode':
+      return !!v.safe_mode
+    case 'att_mode':
+      return v.systems?.adcs.mode ?? null
     case 'phase':
       return v.phase
     case 'kind':
@@ -136,19 +164,19 @@ function lookup(name: string, v: Vehicle, s: Snapshot): number | string | boolea
   return x == null ? null : x
 }
 
-export function evaluate(e: Expr, v: Vehicle, s: Snapshot): number | string | boolean | null {
+export function evaluate(e: Expr, v: Vehicle, s: Snapshot, ui?: UiCtx): number | string | boolean | null {
   switch (e.k) {
     case 'lit':
       return e.v
     case 'name':
-      return lookup(e.v, v, s)
+      return lookup(e.v, v, s, ui)
     case 'not':
-      return !evaluate(e.e, v, s)
+      return !evaluate(e.e, v, s, ui)
     case 'bin': {
-      if (e.op === 'and') return !!evaluate(e.a, v, s) && !!evaluate(e.b, v, s)
-      if (e.op === 'or') return !!evaluate(e.a, v, s) || !!evaluate(e.b, v, s)
-      const a = evaluate(e.a, v, s)
-      const b = evaluate(e.b, v, s)
+      if (e.op === 'and') return !!evaluate(e.a, v, s, ui) && !!evaluate(e.b, v, s, ui)
+      if (e.op === 'or') return !!evaluate(e.a, v, s, ui) || !!evaluate(e.b, v, s, ui)
+      const a = evaluate(e.a, v, s, ui)
+      const b = evaluate(e.b, v, s, ui)
       // Sem o valor (ponto que este veículo não tem): a condição não vale.
       if (a == null || b == null) return false
       switch (e.op) {
@@ -171,7 +199,7 @@ export function evaluate(e: Expr, v: Vehicle, s: Snapshot): number | string | bo
 }
 
 /** Compila uma condição numa função; a condição inválida vira erro na hora de carregar. */
-export function compile(src: string): (v: Vehicle, s: Snapshot) => boolean {
+export function compile(src: string): (v: Vehicle, s: Snapshot, ui?: UiCtx) => boolean {
   const e = parse(src)
-  return (v, s) => !!evaluate(e, v, s)
+  return (v, s, ui) => !!evaluate(e, v, s, ui)
 }

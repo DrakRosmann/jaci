@@ -4,6 +4,7 @@ import { EventLog } from './components/EventLog'
 import { TopBar } from './components/TopBar'
 import { ReplayBar } from './components/ReplayBar'
 import { JoinDialog } from './components/Room'
+import { LessonPanel } from './components/LessonPanel'
 import { Shortcuts } from './components/Shortcuts'
 import { sound } from './lib/audio'
 import { t, tx } from './lib/i18n'
@@ -38,6 +39,7 @@ const VIEWS: Record<View, Lazy> = {
   timeline: view(() => import('./views/Timeline'), (m) => m.Timeline),
   custom: view(() => import('./views/Custom'), (m) => m.Custom),
   wall: view(() => import('./views/Wall'), (m) => m.Wall),
+  school: view(() => import('./views/School'), (m) => m.School),
 }
 
 /** Sem instantâneo há mais que isso, os dados são dados como congelados. */
@@ -129,6 +131,7 @@ export default function App() {
         </main>
       </div>
       <EventLog />
+      <LessonPanel />
       <Toasts />
       {help && <Shortcuts onClose={() => setHelp(false)} />}
       {join && (

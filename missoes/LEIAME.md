@@ -28,6 +28,10 @@ cada arquivo salvo pelo editor do console **Instrutor**, que também confere e m
   Liga e desliga no console **Instrutor**, ou pelo cenário (`scripts = ["nome"]`). Erro ou laço
   sem fim desliga o script, com o motivo no registro de eventos.
 
+* `escola/<id>.toml` — lições da escola de controle: `scenario`, `intro`, `done`, `par_s` (tempo
+  de referência das três estrelas), `vehicle` e `[[objectives]]` com `text`, `hint`, `until` (a
+  mesma linguagem das condições, mais `ui.view`, `selected`, `warp`, `launch.polled`, `burns`,
+  `alarms`, `acked`, `leak_isolated`, `safe_mode` e `att_mode`), `console` e `vehicle`.
 * `ccsds/<nome>.xml` — dicionários de telemetria CCSDS em XTCE: cada contêiner com o APID vira um
   pacote de layout fixo, com unidades, calibração e alarmes (veja `cubesat.xml` e
   `docs/protocolo.md`).

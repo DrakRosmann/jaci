@@ -141,6 +141,11 @@ sequência automática de ativação de satélite.
   vazamento na cabine, remoção de CO₂, paraquedas, célula a combustível, barco na área, falha de solo
   e tempestade.
 * **Kerbal Space Program (KSP):** a ligação com o jogo e o controle das naves pelo kOS (veja abaixo).
+* **Escola de controle (EDU):** lições curtas para aprender a sala — primeiros passos, a primeira
+  contagem (VSB-30), circularizar uma órbita, um vazamento na estação e uma asa solar danificada.
+  Cada uma carrega um cenário e dá objetivos que o Jaci confere sozinho; um cartão acompanha em
+  qualquer console, com dica e "me leve lá", e no fim dá até três estrelas (tempo e dicas). Novas
+  lições se escrevem em `missoes/escola/*.toml`.
 * **Meu console (MEU):** blocos dos outros consoles — mapa, órbita 3D, gráfico, mostradores,
   alarmes, eventos, relógios, frota, contagem, linha do tempo e loops — numa grade que se arrasta
   pelo título e se redimensiona pelo canto ("Editar"); guardado por posição da sala, com modelos

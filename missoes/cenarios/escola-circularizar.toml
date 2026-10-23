@@ -1,0 +1,12 @@
+# Escola: satélite numa órbita elíptica de 300 × 700 km, para circularizar.
+name = "Escola: circularizar a órbita"
+description = "Satélite de observação em 300 × 700 km, 98°: circularize no apoastro"
+
+[[vehicles]]
+vehicle = "amazonia"
+name = "Satélite de treino"
+place = "orbit"
+pe_km = 300
+ap_km = 700
+inc_deg = 98
+nu_deg = 120

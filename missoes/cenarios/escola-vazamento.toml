@@ -1,0 +1,10 @@
+# Escola: um vazamento silencioso num módulo da estação, 60 s depois de começar.
+name = "Escola: vazamento na estação"
+description = "Estação com 7 tripulantes; um módulo começa a vazar em 1 min, sem aviso"
+base = "estacao"
+
+[[faults]]
+vehicle = "Estação espacial"
+fault = "cabin_leak"
+arg = "4"
+in_s = 60

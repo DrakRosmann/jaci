@@ -1,0 +1,34 @@
+name = "Vazamento na estação"
+description = "Detectar, isolar e recuperar a pressão da cabine"
+order = 4
+scenario = "escola-vazamento"
+vehicle = "Estação espacial"
+par_s = 900
+intro = """
+Turno tranquilo na estação. Mas fique de olho: em breve algo vai dar errado, e ninguém vai avisar.
+"""
+done = "Vazamento isolado e tripulação a salvo. O relatório do treino (Instrutor) mostra seus tempos."
+
+[[objectives]]
+text = "Fique de olho na telemetria. Quando aparecer um alarme, você saberá."
+hint = "Acelere o tempo: ele volta a 1× sozinho no alarme. O console de Telemetria (TLM) lista os alarmes."
+until = "alarms > 0"
+console = "telemetry"
+
+[[objectives]]
+text = "Reconheça o alarme."
+hint = "Console de Telemetria (TLM): \"Reconhecer\"."
+until = "acked"
+console = "telemetry"
+
+[[objectives]]
+text = "Descubra o módulo que vaza e feche a escotilha dele."
+hint = "Subsistemas (EECOM) → Suporte de vida: o módulo com vazamento aparece marcado; feche a escotilha dele."
+until = "leak_isolated"
+console = "systems"
+
+[[objectives]]
+text = "Recupere a pressão da cabine acima de 95 kPa."
+hint = "Com a repressurização automática ligada, os tanques repõem o ar."
+until = "ecl.pressure > 95"
+console = "systems"

@@ -1,0 +1,28 @@
+name = "Circularize a órbita"
+description = "Planejar e executar uma queima no apoastro"
+order = 3
+scenario = "escola-circularizar"
+vehicle = "Satélite de treino"
+par_s = 600
+intro = """
+O satélite ficou numa órbita de 300 × 700 km. Você vai usar o planejador para circularizar a
+700 km, com uma queima no apoastro.
+"""
+done = "Órbita circular! O mesmo planejador faz Hohmann, mudança de plano, encontro e saída de órbita."
+
+[[objectives]]
+text = "Abra o console de Órbita e manobras (FIDO)."
+hint = "Tecla 4."
+until = "ui.view == 'orbit'"
+console = "orbit"
+
+[[objectives]]
+text = "No planejador, escolha \"Circularizar no apoastro\", calcule e aplique o plano."
+hint = "Painel Planejador: escolha a manobra, \"Planejar\" e depois \"Aplicar\". A queima entra na fila."
+until = "burns > 0"
+console = "orbit"
+
+[[objectives]]
+text = "Espere a queima no apoastro (acelere o tempo) até a órbita ficar circular perto de 700 km."
+hint = "A queima executa sozinha no instante marcado; acompanhe na fila de queimas e na Linha do tempo."
+until = "orb.pe > 650 and orb.ap < 760"

@@ -1155,10 +1155,8 @@ impl World {
                 let closed = cmd.str("closed").map(|s| s == "on").or(cmd.flag("closed")).unwrap_or(true);
                 let s = sys!();
                 let e = s.eclss.as_mut().ok_or("sem cabine")?;
-                let p = e.pressure();
-                let module = e.modules.iter_mut().find(|x| x.name == m).ok_or("módulo não existe")?;
-                module.isolated = closed;
-                module.pressure_kpa = p;
+                let k = e.modules.iter().position(|x| x.name == m).ok_or("módulo não existe")?;
+                e.set_isolated(k, closed);
                 format!("escotilha de {} {}", m, if closed { "fechada" } else { "aberta" })
             }
             // ── Reentrada ──

@@ -1,0 +1,43 @@
+name = "Primeiros passos"
+description = "Os consoles, o veículo selecionado e o tempo"
+order = 1
+scenario = "estacao"
+par_s = 180
+intro = """
+A sala de controle tem um console para cada assunto, no menu à esquerda (ou nas teclas 1, 2, 3…).
+O veículo selecionado, na barra de cima, é o que todos os consoles mostram.
+"""
+done = "Agora você sabe andar pela sala. A próxima lição é uma contagem de verdade."
+
+[[objectives]]
+text = "Abra o console de Visão geral (FLIGHT)."
+hint = "É o primeiro do menu, ou a tecla 1."
+until = "ui.view == 'overview'"
+console = "overview"
+
+[[objectives]]
+text = "Selecione a Estação espacial."
+hint = "Na lista da barra de cima, ou clicando nela no mapa ou na tabela da frota."
+until = "selected == 'Estação espacial'"
+
+[[objectives]]
+text = "Veja a energia da estação no console de Subsistemas (EECOM)."
+hint = "Tecla 6. A aba Energia mostra painéis, bateria e cargas."
+until = "ui.view == 'systems'"
+console = "systems"
+
+[[objectives]]
+text = "Descubra quando é o próximo eclipse na Linha do tempo (FAO)."
+hint = "Tecla t. As faixas escuras são os eclipses."
+until = "ui.view == 'timeline'"
+console = "timeline"
+
+[[objectives]]
+text = "Acelere o tempo para 100×."
+hint = "Botões da barra de cima, ou a tecla ] duas vezes."
+until = "warp >= 100"
+
+[[objectives]]
+text = "Volte o tempo para 1×."
+hint = "Botão 1× ou a tecla [ até o fim."
+until = "warp == 1"

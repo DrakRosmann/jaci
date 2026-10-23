@@ -524,6 +524,62 @@ impl ProcedureFile {
     }
 }
 
+// ── Escola de controle ──
+
+/// Lição da escola de controle: um cenário e objetivos em ordem, cada um com
+/// a condição que a interface confere a cada instantâneo.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LessonFile {
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    /// Ordem na lista (menor primeiro).
+    #[serde(default)]
+    pub order: i32,
+    /// Cenário que a lição carrega (pronto ou de arquivo); sem ele, segue no atual.
+    pub scenario: Option<String>,
+    /// Texto de abertura.
+    #[serde(default)]
+    pub intro: String,
+    /// Texto do fim.
+    #[serde(default)]
+    pub done: String,
+    /// Veículo das condições (nome), se não for o da plataforma ou o selecionado.
+    pub vehicle: Option<String>,
+    /// Tempo de referência (s de relógio) para as três estrelas.
+    pub par_s: Option<f64>,
+    pub objectives: Vec<ObjectiveFile>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ObjectiveFile {
+    pub text: String,
+    #[serde(default)]
+    pub hint: String,
+    /// Condição de cumprido (a mesma linguagem do `until` dos procedimentos).
+    pub until: String,
+    /// Console que o "me leve lá" abre.
+    pub console: Option<String>,
+    /// Veículo desta condição (nome), se for outro.
+    pub vehicle: Option<String>,
+}
+
+impl LessonFile {
+    fn check(&self, id: &str) -> Result<(), String> {
+        if self.objectives.is_empty() {
+            return Err(format!("{id}: lição sem objetivos"));
+        }
+        for (i, o) in self.objectives.iter().enumerate() {
+            if o.until.trim().is_empty() {
+                return Err(format!("{id}, objetivo {}: sem until", i + 1));
+            }
+        }
+        Ok(())
+    }
+}
+
 // ── A biblioteca ──
 
 /// Os arquivos lidos da pasta de missões.
@@ -532,11 +588,12 @@ pub struct Library {
     pub vehicles: BTreeMap<String, VehicleFile>,
     pub scenarios: BTreeMap<String, ScenarioFile>,
     pub procedures: BTreeMap<String, ProcedureFile>,
+    pub lessons: BTreeMap<String, LessonFile>,
     /// Arquivos com problema: (pasta/arquivo, erro).
     pub errors: Vec<(String, String)>,
 }
 
-pub const KINDS: [(&str, &str); 3] = [("veiculos", "vehicle"), ("cenarios", "scenario"), ("procedimentos", "procedure")];
+pub const KINDS: [(&str, &str); 4] = [("veiculos", "vehicle"), ("cenarios", "scenario"), ("procedimentos", "procedure"), ("escola", "lesson")];
 
 /// Nome de arquivo seguro (sem extensão): letras, números, - e _.
 pub fn clean_id(s: &str) -> String {
@@ -577,6 +634,12 @@ impl Library {
             lib.scenarios.remove(&id);
             lib.errors.push((format!("cenarios/{id}.toml"), e));
         }
+        // Lições só valem com um cenário que existe.
+        let bad: Vec<(String, String)> = lib.lessons.iter().filter_map(|(id, l)| l.scenario.as_ref().filter(|sc| !lib.has_scenario(sc)).map(|sc| (id.clone(), format!("{id}: cenário desconhecido: {sc}")))).collect();
+        for (id, e) in bad {
+            lib.lessons.remove(&id);
+            lib.errors.push((format!("escola/{id}.toml"), e));
+        }
         lib
     }
 
@@ -601,9 +664,19 @@ impl Library {
                 p.check(id)?;
                 self.procedures.insert(id.into(), p);
             }
+            "escola" => {
+                let l: LessonFile = toml::from_str(text).map_err(err)?;
+                l.check(id)?;
+                self.lessons.insert(id.into(), l);
+            }
             _ => return Err(format!("pasta desconhecida: {sub}")),
         }
         Ok(())
+    }
+
+    /// Cenário pronto ou de arquivo com este id.
+    pub fn has_scenario(&self, id: &str) -> bool {
+        scenarios::SCENARIOS.iter().any(|s| s.id == id) || self.scenarios.contains_key(id)
     }
 
     /// Confere um texto sem gravar: lê e, para veículos e cenários, monta.
@@ -613,6 +686,10 @@ impl Library {
         match sub {
             "veiculos" => lib.vehicle(id).map(|_| ()),
             "cenarios" => lib.scenario(id, 0.0, 1).map(|_| ()),
+            "escola" => match lib.lessons[id].scenario.as_deref() {
+                Some(sc) if !lib.has_scenario(sc) => Err(format!("{id}: cenário desconhecido: {sc}")),
+                _ => Ok(()),
+            },
             _ => Ok(()),
         }
     }
@@ -768,6 +845,6 @@ mod tests {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../missoes");
         let lib = Library::load(&dir);
         assert!(lib.errors.is_empty(), "{:?}", lib.errors);
-        assert!(!lib.scenarios.is_empty() && !lib.vehicles.is_empty() && !lib.procedures.is_empty());
+        assert!(!lib.scenarios.is_empty() && !lib.vehicles.is_empty() && !lib.procedures.is_empty() && lib.lessons.len() >= 5);
     }
 }

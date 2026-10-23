@@ -1,0 +1,44 @@
+name = "Sua primeira contagem"
+description = "VSB-30 em Alcântara: contagem, votação GO/NO-GO, voo e recuperação"
+order = 2
+scenario = "sondagem"
+par_s = 900
+intro = """
+O VSB-30 está na rampa de Alcântara a T-10 min. Você vai conduzir a contagem, fazer a votação
+GO/NO-GO das posições e acompanhar o voo até a carga cair no mar de paraquedas.
+"""
+done = "Voo completo! Na sala de verdade, cada posição teria votado por conta própria."
+
+[[objectives]]
+text = "No console de Lançamento (LCC), inicie a contagem."
+hint = "Botão \"Iniciar contagem\"."
+until = "launch.state == 'counting' or launch.state == 'hold'"
+console = "launch"
+
+[[objectives]]
+text = "Faça a votação GO/NO-GO."
+hint = "Botão \"Votação GO/NO-GO\". Cada posição responde; os critérios em vermelho seguram a contagem."
+until = "launch.polled"
+console = "launch"
+
+[[objectives]]
+text = "Com todas as posições GO, retome a contagem."
+hint = "Botão \"Retomar\". Se algum critério estiver vermelho, veja o motivo no painel de critérios."
+until = "launch.state == 'counting' and launch.all_go"
+console = "launch"
+
+[[objectives]]
+text = "Decolagem! Acompanhe a subida no console de Subida (BOOSTER)."
+hint = "Tecla 3. Pode acelerar o tempo: ele volta a 1× sozinho se houver alarme."
+until = "phase != 'prelaunch'"
+console = "trajectory"
+
+[[objectives]]
+text = "Espere o apogeu."
+hint = "A velocidade vertical passa a negativa no ponto mais alto (~240 km)."
+until = "phase != 'prelaunch' and nav.vspeed < 0"
+
+[[objectives]]
+text = "Acompanhe a descida até a carga cair no mar."
+hint = "Os paraquedas abrem sozinhos. Acelere o tempo se quiser."
+until = "phase == 'splashdown'"

@@ -1,0 +1,39 @@
+name = "Asa solar danificada"
+description = "Proteger a energia de um satélite"
+order = 5
+scenario = "escola-bateria"
+vehicle = "Satélite de observação"
+par_s = 600
+intro = """
+Um pedaço de lixo espacial acabou de atingir o satélite: metade de uma asa solar se foi. Com menos
+energia, é preciso proteger a bateria antes de voltar a operar.
+"""
+done = "Satélite protegido. Na vida real, a equipe ainda reprogramaria as passagens para gastar menos."
+
+[[objectives]]
+text = "Veja a geração de energia no console de Subsistemas (EECOM)."
+hint = "Tecla 6, aba Energia."
+until = "ui.view == 'systems'"
+console = "systems"
+
+[[objectives]]
+text = "Entre em modo de segurança (corta as cargas não essenciais)."
+hint = "Botão \"Modo de segurança\" no topo do console de Subsistemas."
+until = "safe_mode"
+console = "systems"
+
+[[objectives]]
+text = "Aponte os painéis ao Sol."
+hint = "Console de Órbita (FIDO): modo de atitude \"Sol\"."
+until = "att_mode == 'sun'"
+console = "orbit"
+
+[[objectives]]
+text = "Espere a bateria passar de 90 % (acelere o tempo)."
+hint = "Fora do eclipse ela carrega; a Linha do tempo mostra quando vem o próximo."
+until = "eps.soc > 90 and eps.battery > 0"
+
+[[objectives]]
+text = "Saia do modo de segurança e volte a apontar ao nadir."
+hint = "Subsistemas: \"Sair do modo de segurança\"; Órbita: atitude \"Nadir\"."
+until = "not safe_mode and att_mode == 'nadir'"

@@ -31,6 +31,7 @@ pub fn hello(a: &mut App) -> String {
         "scenarios": scenario_list(a),
         "catalog": catalog_list(a),
         "procedures": procedure_list(a),
+        "lessons": lesson_list(a),
         "commands": commands::dictionary().into_iter().chain(crate::ksp::commands()).collect::<Vec<_>>(),
         "faults": FAULTS.iter().map(|(id, name, arg)| json!({"id": id, "name": name, "arg": arg})).collect::<Vec<_>>(),
         "stations": w.stations,
@@ -67,9 +68,19 @@ fn procedure_list(a: &App) -> Value {
     }).collect::<Vec<_>>())
 }
 
+fn lesson_list(a: &App) -> Value {
+    let mut v: Vec<Value> = a.library.lessons.iter().map(|(id, l)| {
+        let mut x = json!(l);
+        x["id"] = json!(id);
+        x
+    }).collect();
+    v.sort_by_key(|x| (x["order"].as_i64().unwrap_or(0), x["id"].as_str().unwrap_or("").to_string()));
+    json!(v)
+}
+
 /// As listas que mudam quando um arquivo de missão é salvo.
 pub fn library(a: &App) -> Value {
-    json!({"type": "library", "scenarios": scenario_list(a), "catalog": catalog_list(a), "procedures": procedure_list(a)})
+    json!({"type": "library", "scenarios": scenario_list(a), "catalog": catalog_list(a), "procedures": procedure_list(a), "lessons": lesson_list(a)})
 }
 
 fn event(e: &jaci_sim::vehicle::Event) -> Value {

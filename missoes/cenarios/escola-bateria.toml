@@ -1,0 +1,10 @@
+# Escola: metade de uma asa solar se perde logo no começo.
+name = "Escola: asa solar danificada"
+description = "Satélite de observação perde metade de uma asa solar 20 s depois de começar"
+base = "observacao"
+
+[[faults]]
+vehicle = "Satélite de observação"
+fault = "solar_degrade"
+in_s = 20
+announce = true
