@@ -6,7 +6,8 @@ cada arquivo salvo pelo editor do console **Instrutor**, que também confere e m
 
 * `veiculos/<id>.toml` — parte de um veículo do catálogo (`base = "medio_sso"`) com ajustes, ou
   monta uma pilha nova de estágios (`kind` e `[[stages]]`). Veja `vsb30-carga-pesada.toml` e
-  `lancador-leve.toml`.
+  `lancador-leve.toml`. Em `[ascent]`, `peg = false` troca o PEG da malha fechada pela lei
+  antiga.
 * `cenarios/<id>.toml` — veículos na plataforma (`place = "pad"`) ou em órbita
   (`place = "orbit"`), hora de início, clima, aceleração, satélites reais (`tle`) e falhas
   planejadas para o treino (`[[faults]]`). Pode partir de um cenário pronto (`base = "estacao"`).

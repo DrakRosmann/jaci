@@ -231,8 +231,10 @@ ficam desligados. Ao vivo, o botão CSV do console de telemetria baixa os últim
   reignição) e sólidos, empuxo que muda com a pressão ambiente, coifa, torre de escape, separação
   da carga útil; estágios largados viram detritos que caem ou ficam em órbita.
 * **Guiamento de subida:** programa de arfagem em malha aberta e, no estágio superior, malha
-  fechada que zera a velocidade radial na altitude de inserção, com o plano alvo e o corte pela
-  energia (circular) ou pelo apoastro (elíptica); órbitas altas inserem baixo e circularizam no
+  fechada pelo PEG (Powered Explicit Guidance, o do ônibus espacial na forma 2D: direção
+  linear-tangente com A, B e o tempo até o corte resolvidos a cada segundo para chegar ao raio de
+  inserção com velocidade radial nula), com o plano alvo e o corte pela energia (circular) ou pelo
+  apoastro (elíptica); num estágio que não chega sozinho, uma lei mais simples até a separação; órbitas altas inserem baixo e circularizam no
   apoastro; lançadores sólidos sobem em balística e acendem o motor de apogeu. Limite de g e redução
   de potência na pressão dinâmica máxima.
 * **Reentrada:** arrasto e sustentação por número de Mach, aquecimento de Sutton-Graves, escudo
@@ -344,8 +346,8 @@ da Terra, corrige a trajetória duas vezes, chega com o periastro pedido e entra
   corpo, para o planejador; a inclinação no equador do corpo central vai em `orb.inc_eq`.
 * A atitude dos foguetes e dos veículos em alta aceleração do tempo é cinemática (gira com taxa
   limitada até o alvo); a dinâmica de corpo rígido vale para naves em órbita.
-* O guiamento de subida não é o PEG nem o de nenhum veículo real; o RTLS do ônibus espacial é
-  simplificado.
+* O PEG é a versão 2D de um estágio (não o UPFG completo de vários estágios); o RTLS do ônibus
+  espacial é simplificado.
 * UT1 é tratado como igual ao UTC (diferença abaixo de 0,9 s); a tabela de segundos intercalares
   (`sim/src/time.rs`) precisa de uma linha nova quando o IERS anunciar um.
 * Telemetria do veículo externo por CCSDS: só o pacote de navegação (APID 0x200).

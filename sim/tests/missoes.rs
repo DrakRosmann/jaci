@@ -431,3 +431,19 @@ fn sol_e_lua_inclinam_o_geoestacionario() {
     assert!(sem < 0.01, "sem perturbação: {sem}");
     assert!(com > 0.8 && com < 1.0, "com perturbação: {com}°/ano");
 }
+
+#[test]
+fn peg_guia_o_estagio_superior() {
+    let mut w = scenarios::build("sso", t0(), 3).unwrap();
+    let vid = launch(&mut w);
+    run_until(&mut w, 900.0, |w| w.vehicle(vid).unwrap().guidance.closed_loop);
+    run_until(&mut w, 60.0, |_| false);
+    let g = &w.vehicle(vid).unwrap().guidance;
+    let peg = g.peg.expect("o PEG não assumiu a malha fechada");
+    assert!(peg.converged, "PEG sem convergir: {peg:?}");
+    let t_go = g.t_go;
+    run_until(&mut w, 30.0, |_| false);
+    let t_go2 = w.vehicle(vid).unwrap().guidance.t_go;
+    // O tempo até o corte cai junto com o relógio.
+    assert!((t_go - t_go2 - 30.0).abs() < 8.0, "T de {t_go:.0} para {t_go2:.0} em 30 s");
+}

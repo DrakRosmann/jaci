@@ -113,6 +113,8 @@ pub struct AscentPatch {
     pub max_g: Option<f64>,
     pub payload_sep: Option<bool>,
     pub kick_stage: Option<usize>,
+    /// Malha fechada pelo PEG (padrão) ou, com false, pela lei antiga.
+    pub peg: Option<bool>,
 }
 
 fn one() -> f64 {
@@ -268,6 +270,9 @@ impl Library {
             set!(target_pe_km, target_ap_km, inclination_deg, north, turn_start_speed, turn_end_km, end_pitch_deg, turn_shape, closed_loop_stage, max_g, payload_sep);
             if p.kick_stage.is_some() {
                 a.kick_stage = p.kick_stage;
+            }
+            if let Some(peg) = p.peg {
+                v.guidance.legacy_ascent = !peg;
             }
             if a.target_ap_km < a.target_pe_km {
                 return Err(format!("{id}: apoastro alvo abaixo do periastro"));

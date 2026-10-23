@@ -485,6 +485,24 @@ pub struct Guidance {
     /// Tempo para o fim da queima estimado pelo guiamento (s).
     #[serde(default)]
     pub t_go: f64,
+    /// Estado do PEG no estágio superior (malha fechada da subida).
+    #[serde(default)]
+    pub peg: Option<Peg>,
+    /// Usa a lei antiga da malha fechada em vez do PEG.
+    #[serde(default)]
+    pub legacy_ascent: bool,
+}
+
+/// Powered Explicit Guidance: fr(t) = A + B·t (+ gravidade menos centrífuga),
+/// e o tempo até o corte T, calculados no instante `at`.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+pub struct Peg {
+    pub a: f64,
+    pub b: f64,
+    pub t: f64,
+    pub at: f64,
+    /// Convergiu (T mudou pouco entre duas atualizações).
+    pub converged: bool,
 }
 
 impl Default for Guidance {
@@ -518,6 +536,8 @@ impl Default for Guidance {
             att_cmd: None,
             rcs_accel: Vec3::ZERO,
             t_go: 0.0,
+            peg: None,
+            legacy_ascent: false,
         }
     }
 }

@@ -236,22 +236,118 @@ fn ascent(v: &mut Vehicle, t: f64, out: &mut StepOutput) {
     let throttle = v.stages.iter().flat_map(|s| &s.engines).filter(|e| e.lit() && !e.solid).map(|e| e.throttle).next().unwrap_or(1.0);
     let a_t_now = f_max * throttle / mass;
     let ve = f_max / mdot;
-    let need = dv_h.norm().max(1.0);
-    let t_go = (mass / (mdot * throttle)) * (1.0 - (-need / ve).exp());
-    let t_go = t_go.max(2.0);
-    v.guidance.t_go = t_go;
-    if t_go < 4.0 && v.guidance.att_cmd.is_some() {
-        // Fase terminal: congela a atitude.
-        return;
-    }
-    let a0 = 6.0 * (r_p - rn) / (t_go * t_go) - 4.0 * vr / t_go;
-    let g = mu / (rn * rn);
-    let a_r = a0 + g - vh.norm2() / rn;
-    let s = (a_r / a_t_now).clamp(-0.6, 0.9);
+    // PEG: componente radial do empuxo; sem solução (estágio que não chega
+    // sozinho, por exemplo), a lei antiga.
+    let peg = if v.guidance.legacy_ascent { None } else { peg_step(v, t, r_p, v_t, ve, a_t_now) };
+    let s = match peg {
+        Some(fr) => fr,
+        None => {
+            v.guidance.peg = None;
+            let need = dv_h.norm().max(1.0);
+            let t_go = ((mass / (mdot * throttle)) * (1.0 - (-need / ve).exp())).max(2.0);
+            v.guidance.t_go = t_go;
+            if t_go < 4.0 && v.guidance.att_cmd.is_some() {
+                // Fase terminal: congela a atitude.
+                return;
+            }
+            let a0 = 6.0 * (r_p - rn) / (t_go * t_go) - 4.0 * vr / t_go;
+            let g = mu / (rn * rn);
+            let a_r = a0 + g - vh.norm2() / rn;
+            a_r / a_t_now
+        }
+    };
+    let s = s.clamp(-0.6, 0.9);
     let c = (1.0 - s * s).sqrt();
     let dir = up * s + dv_h.unit() * c;
     v.guidance.att_cmd = Some(Quat::look(dir, -up));
-    let _ = t;
+}
+
+/// Intervalo entre os ciclos maiores do PEG (s de simulação).
+const PEG_CYCLE: f64 = 1.0;
+/// Abaixo disto o PEG não recalcula: segue A + B·t até o corte.
+const PEG_TERMINAL: f64 = 10.0;
+
+/// PEG 2D (Powered Explicit Guidance, o do ônibus espacial na forma
+/// clássica): a componente radial do empuxo é linear no tempo mais a
+/// compensação da gravidade menos a centrífuga, fr = A + B·t + C, com A, B e o
+/// tempo até o corte T resolvidos para chegar a `r_t` com velocidade radial
+/// nula e horizontal `vh_t`. Devolve fr agora, ou None se não há solução.
+fn peg_step(v: &mut Vehicle, t: f64, r_t: f64, vh_t: f64, ve: f64, acc: f64) -> Option<f64> {
+    let mu = v.central.mu();
+    let up = v.r.unit();
+    let r = v.r.norm();
+    let vr = v.v.dot(up);
+    let vh = (v.v - up * vr).norm();
+    let omega = vh / r;
+    let tau = ve / acc;
+    let c_now = (mu / (r * r) - omega * omega * r) / acc;
+    let mut st = v.guidance.peg.unwrap_or(Peg { a: 0.0, b: 0.0, t: 0.0, at: t, converged: false });
+    let dt = t - st.at;
+    if v.guidance.peg.is_some() && (dt < PEG_CYCLE || (st.converged && st.t - dt < PEG_TERMINAL)) {
+        // Entre ciclos e na fase final: segue a lei calculada.
+        v.guidance.t_go = (st.t - dt).max(0.0);
+        return Some(st.a + st.b * dt + c_now);
+    }
+    if v.guidance.peg.is_none() {
+        // Primeira estimativa de T: a equação do foguete com o Δv horizontal.
+        st.t = tau * (1.0 - (-((vh_t - vh).abs().max(1.0)) / ve).exp());
+    } else {
+        st.t -= dt;
+        st.a += st.b * dt;
+    }
+    let mut t_go = st.t;
+    let (mut a, mut b) = (st.a, st.b);
+    let mut converged = false;
+    for _ in 0..4 {
+        if !(t_go > 0.5 && t_go < 0.98 * tau) {
+            return None;
+        }
+        let b0 = -ve * (1.0 - t_go / tau).ln();
+        let b1 = b0 * tau - ve * t_go;
+        let c0 = b0 * t_go - b1;
+        let c1 = c0 * tau - ve * t_go * t_go / 2.0;
+        let det = b0 * c1 - b1 * c0;
+        if det.abs() < 1e-9 {
+            return None;
+        }
+        let (rhs1, rhs2) = (-vr, r_t - r - vr * t_go);
+        a = (c1 * rhs1 - b1 * rhs2) / det;
+        b = (b0 * rhs2 - c0 * rhs1) / det;
+        // Tempo até o corte pelo momento angular que falta.
+        let fr = a + c_now;
+        let a_end = acc / (1.0 - t_go / tau);
+        let omega_t = vh_t / r_t;
+        let fr_t = a + b * t_go + (mu / (r_t * r_t) - omega_t * omega_t * r_t) / a_end;
+        let fr_dot = (fr_t - fr) / t_go;
+        let f_th = 1.0 - fr * fr / 2.0;
+        let f_th_dot = -fr * fr_dot;
+        let f_th_ddot = -fr_dot * fr_dot / 2.0;
+        let dh = r_t * vh_t - r * vh;
+        let r_avg = (r + r_t) / 2.0;
+        let dv = (dh / r_avg + ve * t_go * (f_th_dot + f_th_ddot * tau) + f_th_ddot * ve * t_go * t_go / 2.0) / (f_th + f_th_dot * tau + f_th_ddot * tau * tau);
+        if !dv.is_finite() || dv <= 0.0 {
+            return None;
+        }
+        let t_new = tau * (1.0 - (-dv / ve).exp());
+        converged = (t_new - t_go).abs() < 0.5;
+        t_go = t_new;
+        if converged {
+            break;
+        }
+    }
+    if !(a.is_finite() && b.is_finite()) {
+        return None;
+    }
+    // O PEG daqui é de um estágio: se este acaba antes do corte, quem guia até
+    // a separação é a lei antiga, e o PEG assume no estágio seguinte.
+    let (f_now, mdot_now) = burn_capacity(v);
+    let prop: f64 = v.active_stages().iter().map(|&i| v.stages[i].propellant).sum();
+    if f_now > 0.0 && mdot_now > 0.0 && prop / mdot_now < t_go - 1.0 {
+        return None;
+    }
+    v.guidance.peg = Some(Peg { a, b, t: t_go, at: t, converged });
+    v.guidance.t_go = t_go;
+    Some(a + c_now)
 }
 
 /// Motor de apogeu: horizontal, no plano, aceso quando faltar metade da
