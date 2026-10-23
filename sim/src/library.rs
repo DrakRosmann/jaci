@@ -51,6 +51,13 @@ pub struct VehicleFile {
     pub landing_target: Option<[f64; 2]>,
     /// Terminação de voo instalada.
     pub fts: Option<bool>,
+    /// Copia de um veículo do catálogo a recuperação e o pouso: paraquedas,
+    /// escudo térmico, torre de escape, pernas ou pista, portas de
+    /// acoplamento e a forma (cápsula).
+    pub recovery_from: Option<String>,
+    /// Como pousa: "splash" (paraquedas no mar), "legs" (pernas e motor),
+    /// "runway" (pista) ou "none".
+    pub landing: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -240,6 +247,28 @@ impl Library {
                 v.items.push(Item { id: "fairing".into(), name: "Coifa".into(), mass: kg });
             }
         }
+        if let Some(src) = &f.recovery_from {
+            let r = catalog::build(src).ok_or(format!("{id}: recovery_from desconhecido: {src}"))?;
+            v.heat_shield = r.heat_shield;
+            v.chutes = r.chutes;
+            v.landing = r.landing;
+            v.les = r.les;
+            v.ports = r.ports;
+            v.guidance.auto_chutes = r.guidance.auto_chutes;
+            v.guidance.auto_pdi_alt = r.guidance.auto_pdi_alt;
+            if r.shape == Shape::Capsule {
+                v.shape = Shape::Capsule;
+            }
+        }
+        if let Some(l) = &f.landing {
+            v.landing = match l.as_str() {
+                "splash" => LandingMode::Splash,
+                "legs" => LandingMode::Legs,
+                "runway" => LandingMode::Runway,
+                "none" => LandingMode::None,
+                _ => return Err(format!("{id}: landing deve ser splash, legs, runway ou none, não {l}")),
+            };
+        }
         if let Some(src) = &f.systems_from {
             v.systems = catalog::build(src).ok_or(format!("{id}: systems_from desconhecido: {src}"))?.systems;
         }
@@ -404,8 +433,15 @@ impl Library {
                     }
                     let site = catalog::sites().into_iter().find(|s| s.name.starts_with(sv.site.as_deref().unwrap_or("Alcântara"))).ok_or(format!("{id}: local desconhecido: {:?}", sv.site))?;
                     scenarios::on_pad(&mut v, site, w.t);
+                    let t_minus = sv.t_minus.unwrap_or(600.0);
+                    // Contagem que começa nos últimos 10 min: o carregamento já foi feito.
+                    if t_minus < 600.0 {
+                        for s in &mut v.stages {
+                            s.propellant = s.capacity;
+                        }
+                    }
                     let vid = w.add_vehicle(v);
-                    pad = Some((vid, sv.t_minus.unwrap_or(600.0), sv.window_to.clone()));
+                    pad = Some((vid, t_minus, sv.window_to.clone()));
                 }
                 "orbit" => {
                     let body = match &sv.body {

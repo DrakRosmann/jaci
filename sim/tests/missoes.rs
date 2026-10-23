@@ -29,6 +29,7 @@ fn launch(w: &mut World) -> u32 {
             w.execute(vid, &Command::new("poll")).unwrap();
             if let Err(e) = w.execute(vid, &Command::new("count_start")) {
                 let bad: Vec<_> = w.launch.criteria.iter().filter(|c| !c.ok).map(|c| format!("{} {}", c.name, c.value)).collect();
+                for e in &w.events { println!("{:>8.1} [{:?}] {}", e.t - t0(), e.level, e.text); }
                 panic!("não retomou: {e}: {bad:?}");
             }
         }
@@ -797,4 +798,43 @@ fn escola_subida_pilotada_do_arquivo() {
     let (pe, ap, _) = orbit_of(&w, id);
     println!("escola-subida: {pe:.0} × {ap:.0} km");
     assert!(w.vehicle(id).unwrap().guidance.inserted && pe > 150.0);
+}
+
+/// Foguetes montados no hangar da interface (os arquivos que ela gera, em
+/// sim/tests/hangar): carregam como os outros e chegam à órbita.
+fn hangar_to_orbit(file: &str, site: &str) -> (World, u32) {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../missoes");
+    let mut lib = jaci_sim::library::Library::load(&dir);
+    let text = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/hangar").join(file)).unwrap();
+    lib.insert("veiculos", "teste-hangar", &text).expect("veículo do hangar");
+    lib.insert("cenarios", "teste-hangar-missao", &format!("name = \"Hangar\"\n[[vehicles]]\nvehicle = \"teste-hangar\"\nplace = \"pad\"\nsite = \"{site}\"\nt_minus = 60\n")).unwrap();
+    let mut w = lib.scenario("teste-hangar-missao", t0(), 3).unwrap();
+    let id = launch(&mut w);
+    run_until(&mut w, 1_500.0, |w| {
+        let v = w.vehicle(id).unwrap();
+        v.guidance.inserted || v.phase.is_final()
+    });
+    print_events(&w);
+    (w, id)
+}
+
+#[test]
+fn hangar_lancador_leve_chega_a_orbita() {
+    let (w, id) = hangar_to_orbit("hangar-leve.toml", "Alcântara");
+    let (pe, ap, i) = orbit_of(&w, id);
+    println!("hangar leve: {pe:.0} × {ap:.0} km, {i:.1}°");
+    assert!(w.vehicle(id).unwrap().guidance.inserted, "não inseriu");
+    assert!(pe > 200.0, "periastro {pe:.0} km");
+}
+
+#[test]
+fn hangar_pesado_com_boosters_e_capsula() {
+    let (w, id) = hangar_to_orbit("hangar-pesado.toml", "Cabo Canaveral");
+    let v = w.vehicle(id).unwrap();
+    let (pe, ap, i) = orbit_of(&w, id);
+    println!("hangar pesado: {pe:.0} × {ap:.0} km, {i:.1}°, tripulação {}", v.crew());
+    assert!(v.guidance.inserted, "não inseriu");
+    assert!(pe > 180.0, "periastro {pe:.0} km");
+    assert_eq!(v.crew(), 3);
+    assert!(v.heat_shield.is_some() && !v.chutes.is_empty(), "sem escudo ou paraquedas");
 }

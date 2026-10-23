@@ -274,7 +274,8 @@ impl LaunchControl {
         }
         let load_ok = v.stages.iter().filter(|s| s.cryogenic).all(|s| s.prop_fraction() >= 0.985);
         let min_load = v.stages.iter().filter(|s| s.cryogenic).map(|s| s.prop_fraction()).fold(1.0, f64::min);
-        let need_load = self.t_minus <= 600.0;
+        // Depois da ignição (motores acesos na plataforma) o propelente já está sendo queimado.
+        let need_load = self.t_minus <= 600.0 && !v.any_engine_lit();
         add("loaded", "Propelentes carregados", "prop", !need_load || load_ok, format!("{:.1} %", min_load * 100.0), "≥ 98,5 % a partir de T-10 min");
         let leak = v.stages.iter().any(|s| s.leak > 0.0);
         add("tanks", "Pressão dos tanques", "prop", !leak, if leak { "queda de pressão".into() } else { "nominal".into() }, "nominal");

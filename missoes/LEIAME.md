@@ -8,8 +8,13 @@ cada arquivo salvo pelo editor do console **Instrutor**, que também confere e m
   monta uma pilha nova de estágios (`kind` e `[[stages]]`). Veja `vsb30-carga-pesada.toml` e
   `lancador-leve.toml`. Em `[ascent]`, `peg = false` troca o PEG da malha fechada pela lei
   antiga.
+  `recovery_from = "medio_capsula"` copia de um veículo do catálogo a recuperação (paraquedas,
+  escudo térmico, torre de escape, pernas ou pista, portas de acoplamento e a forma de cápsula), e
+  `landing` troca só o modo de pouso (`splash`, `legs`, `runway` ou `none`). O Hangar da
+  interface gera esses arquivos (com o projeto num comentário `# hangar:` para reabrir).
 * `cenarios/<id>.toml` — veículos na plataforma (`place = "pad"`) ou em órbita
-  (`place = "orbit"`), hora de início, clima, aceleração, satélites reais (`tle`) e falhas
+  (`place = "orbit"`; com `t_minus` abaixo de 600 s os tanques criogênicos já começam cheios),
+  hora de início, clima, aceleração, satélites reais (`tle`) e falhas
   planejadas para o treino (`[[faults]]`). Pode partir de um cenário pronto (`base = "estacao"`).
 * `procedimentos/<id>.toml` — passos `note`, `check`, `cmd` (comando com `args`) e `wait` (espera
   uma condição, ex. `until = "eps.soc > 80 and phase == 'orbit'"`). Nas condições: pontos de

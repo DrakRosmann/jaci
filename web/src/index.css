@@ -2511,3 +2511,122 @@ table.windows td .dot {
   border-radius: 4px;
   pointer-events: none;
 }
+
+/* Hangar (VAB) */
+.hangar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hangar-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr) minmax(260px, 340px);
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 1250px) {
+  .hangar-grid {
+    grid-template-columns: minmax(280px, 1fr) minmax(0, 1.4fr);
+  }
+  .hangar-stats {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 800px) {
+  .hangar-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.hangar-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 600px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.hangar-parts .field {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.hangar-parts .field input {
+  flex: 1;
+}
+.part {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent-2);
+  border-radius: 6px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  background: var(--panel-2);
+}
+.part.payload {
+  border-left-color: var(--good);
+}
+.part.boosters {
+  border-left-color: var(--accent);
+}
+.part-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+.part-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 8px;
+  font-size: 12px;
+}
+.part-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--muted);
+}
+.part-grid label b {
+  color: var(--text);
+}
+.hangar-view {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  min-height: 560px;
+}
+.hangar-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dv-table td.bad {
+  color: var(--bad);
+}
+.dv-bar {
+  position: relative;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--input);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.dv-bar .fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-2), var(--good));
+}
+.dv-bar .mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--text);
+  opacity: 0.7;
+}
+.hangar-mission {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: center;
+}

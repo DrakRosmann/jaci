@@ -44,6 +44,7 @@ const VIEWS: Record<View, Lazy> = {
   school: view(() => import('./views/School'), (m) => m.School),
   manual: view(() => import('./views/Manual'), (m) => m.Manual),
   vehicle3d: view(() => import('./views/VehicleView'), (m) => m.VehicleView),
+  hangar: view(() => import('./views/Hangar'), (m) => m.Hangar),
 }
 
 /** Sem instantâneo há mais que isso, os dados são dados como congelados. */

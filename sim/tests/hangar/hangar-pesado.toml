@@ -1,0 +1,89 @@
+# Montado no hangar do Jaci.
+# hangar: {"design":{"name":"Pesado com boosters","payload":"capsule","payloadMass":9000,"crew":3,"stages":[{"boosters":true,"propellant":"solid","diameter":1.8,"length":16,"engine":"s1000","count":4},{"boosters":false,"propellant":"kerolox","diameter":3.7,"length":38,"engine":"k900","count":9},{"boosters":false,"propellant":"kerolox","diameter":3.7,"length":11,"engine":"k980v","count":1}]},"mission":{"mode":"pad","site":"Cabo Canaveral","tMinus":120,"pe":250,"ap":250,"inc":28.5,"north":true,"body":"earth","calm":true}}
+name = "Pesado com boosters"
+description = "3 estágio(s) e cápsula tripulada, montado no hangar"
+kind = "capsule"
+systems_from = "medio_capsula"
+recovery_from = "medio_capsula"
+crew = 3
+fairing_kg = 0
+
+[ascent]
+target_pe_km = 250
+target_ap_km = 250
+inclination_deg = 28.5
+north = true
+closed_loop_stage = 2
+
+[[stages]]
+name = "Boosters"
+dry_kg = 31465
+propellant_kg = 262205
+diameter_m = 1.8
+length_m = 16
+boosters = true
+[[stages.engines]]
+name = "Booster (Sólido 1.000 kN)"
+count = 4
+thrust_kn = 1000
+isp_vac = 280
+isp_sl = 255
+solid = true
+pc_bar = 70
+
+[[stages]]
+name = "1º estágio"
+dry_kg = 29396
+propellant_kg = 387170
+diameter_m = 3.7
+length_m = 38
+cryogenic = true
+[[stages.engines]]
+name = "Querosene 900 kN"
+count = 9
+thrust_kn = 914
+isp_vac = 311
+isp_sl = 282
+min_throttle = 0.4
+ignitions = 3
+pc_bar = 97
+
+[[stages]]
+name = "2º estágio"
+dry_kg = 7835
+propellant_kg = 112076
+diameter_m = 3.7
+length_m = 11
+cryogenic = true
+[[stages.engines]]
+name = "Querosene 980 kN de vácuo"
+thrust_kn = 981
+isp_vac = 348
+isp_sl = 200
+min_throttle = 0.39
+ignitions = 4
+pc_bar = 97
+
+[[stages]]
+name = "Tronco"
+dry_kg = 1300
+propellant_kg = 0
+diameter_m = 3.7
+length_m = 3.7
+spacecraft = true
+
+[[stages]]
+name = "Cápsula"
+dry_kg = 9000
+propellant_kg = 2400
+diameter_m = 3.7
+length_m = 3
+spacecraft = true
+[[stages.engines]]
+name = "Propulsores de manobra 8×400 N"
+thrust_kn = 3.2
+isp_vac = 300
+isp_sl = 240
+min_throttle = 1
+ignitions = 100
+pc_bar = 10

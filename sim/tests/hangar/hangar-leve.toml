@@ -1,0 +1,63 @@
+# Montado no hangar do Jaci.
+# hangar: {"design":{"name":"Meu foguete","payload":"satellite","payloadMass":150,"crew":0,"stages":[{"boosters":false,"propellant":"kerolox","diameter":1.2,"length":12,"engine":"k25","count":9},{"boosters":false,"propellant":"kerolox","diameter":1.2,"length":2.4,"engine":"k25v","count":1}]},"mission":{"mode":"pad","site":"Alcântara","tMinus":120,"pe":300,"ap":300,"inc":5,"north":true,"body":"earth","calm":true}}
+name = "Meu foguete"
+description = "2 estágio(s) e satélite, montado no hangar"
+kind = "satellite"
+systems_from = "amazonia"
+fairing_kg = 50
+
+[ascent]
+target_pe_km = 300
+target_ap_km = 300
+inclination_deg = 5
+north = true
+closed_loop_stage = 1
+
+[[stages]]
+name = "1º estágio"
+dry_kg = 1151
+propellant_kg = 12861
+diameter_m = 1.2
+length_m = 12
+cryogenic = true
+[[stages.engines]]
+name = "Querosene 25 kN"
+count = 9
+thrust_kn = 25.8
+isp_vac = 311
+isp_sl = 303
+min_throttle = 0.8
+ignitions = 1
+pc_bar = 120
+
+[[stages]]
+name = "2º estágio"
+dry_kg = 207
+propellant_kg = 2572
+diameter_m = 1.2
+length_m = 2.4
+cryogenic = true
+[[stages.engines]]
+name = "Querosene 25 kN de vácuo"
+thrust_kn = 25.8
+isp_vac = 343
+isp_sl = 250
+min_throttle = 0.5
+ignitions = 3
+pc_bar = 120
+
+[[stages]]
+name = "Satélite"
+dry_kg = 150
+propellant_kg = 60
+diameter_m = 1.2
+length_m = 2.5
+spacecraft = true
+[[stages.engines]]
+name = "Propulsores de hidrazina 4×1 N"
+thrust_kn = 0.004
+isp_vac = 220
+isp_sl = 176
+min_throttle = 1
+ignitions = 500
+pc_bar = 15

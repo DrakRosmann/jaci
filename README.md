@@ -235,6 +235,20 @@ sequência automática de ativação de satélite.
     pelo motor;
   - as naves acopladas presas nas portas da estação: selecionando a visitante, a câmera mira nela
     e na porta.
+* **Hangar (VAB):** montar foguetes e missões, como no Kerbal Space Program.
+  - **Estágios:** cada um com propelente (querosene, metano ou hidrogênio com oxigênio,
+    hipergólicos ou sólido), motor (de nível do mar ou de vácuo, com empuxo, Isp, massa,
+    regulagem e reignições parecidos com os de verdade), quantidade, diâmetro e comprimento. O
+    tamanho dá o propelente pela densidade e a estrutura pela fração de cada tipo.
+  - **Boosters laterais** e a **carga**: satélite, sonda com motor próprio, cápsula tripulada
+    com escudo, paraquedas, torre de escape e porta, ou só massa.
+  - **Ao lado:** o foguete em 3D na plataforma, o Δv e o TWR de cada fase (boosters queimando
+    junto com o núcleo), o tempo de queima, a massa na decolagem, avisos e uma régua com o Δv que
+    cada destino pede.
+  - **Missão:** da plataforma (local, T-, órbita alvo, rumo, tempo bom) ou já em órbita da Terra,
+    da Lua ou de Marte.
+  - **Salvar e lançar:** grava `veiculos/<nome>.toml` e `cenarios/<nome>-missao.toml` (o projeto
+    vai num comentário para reabrir no hangar) e carrega a missão.
 * **Escola de controle (EDU):** lições curtas para aprender a sala:
   - primeiros passos, a primeira contagem (VSB-30), circularizar uma órbita, um vazamento na
     estação e uma asa solar danificada;
