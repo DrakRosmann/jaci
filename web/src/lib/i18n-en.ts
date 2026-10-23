@@ -1330,4 +1330,23 @@ export const EN: Record<string, string> = {
   'cada tela entra numa posição': 'each screen takes a position',
   'todas as telas comandam tudo': 'every screen commands everything',
   'Loop': 'Loop',
+
+  // ── Missões em arquivos ──
+  'Abra um arquivo ou comece um novo.': 'Open a file or start a new one.',
+  'arquivo': 'file',
+  'Arquivo novo a partir de um modelo': 'New file from a template',
+  'Conferir': 'Check',
+  'Formato e exemplos: missoes/LEIAME.md': 'Format and examples: missoes/LEIAME.md',
+  'Lê a pasta de novo (depois de mexer nos arquivos por fora)': 'Reads the folder again (after editing the files elsewhere)',
+  'Ler a pasta de novo': 'Read the folder again',
+  'Missões em arquivos': 'Missions in files',
+  'nome-do-arquivo': 'file-name',
+  'Nome do arquivo': 'File name',
+  'novo': 'new',
+  'Pasta': 'Folder',
+  'Salvar e carregar o cenário': 'Save and load the scenario',
+  'Cenários': 'Scenarios',
+  'arquivo correto': 'file is valid',
+  'salvo em': 'saved to',
+  'dê um nome ao arquivo (letras, números, - e _)': 'name the file (letters, digits, - and _)',
 }

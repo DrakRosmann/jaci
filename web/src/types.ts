@@ -12,6 +12,15 @@ export interface EventMsg {
   channel?: string
 }
 
+/** Procedimento lido de missoes/procedimentos (veja missoes/LEIAME.md). */
+export interface ProcedureFile {
+  id: string
+  name: string
+  description: string
+  kinds: string[]
+  steps: { kind: 'note' | 'check' | 'cmd' | 'wait'; text: string; cmd?: string; args?: Record<string, unknown>; hazardous?: boolean; until?: string }[]
+}
+
 /** Posição da sala de controle e o que ela comanda (vem do servidor). */
 export interface Role {
   id: string
@@ -73,8 +82,10 @@ export interface Hello {
   type: 'hello'
   version: string
   t: number
-  scenarios: { id: string; name: string; description: string }[]
-  catalog: { id: string; name: string; kind: string; description: string }[]
+  scenarios: { id: string; name: string; description: string; file?: boolean }[]
+  catalog: { id: string; name: string; kind: string; description: string; file?: boolean }[]
+  /** Procedimentos dos arquivos de missão. */
+  procedures?: ProcedureFile[]
   commands: CmdDef[]
   faults: { id: string; name: string; arg: string }[]
   stations: Station[]

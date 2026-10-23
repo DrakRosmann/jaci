@@ -15,6 +15,7 @@ pub mod vehicle;
 pub mod commands;
 pub mod ground;
 pub mod launch;
+pub mod library;
 pub mod planner;
 pub mod scenarios;
 pub mod telemetry;

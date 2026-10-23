@@ -1,0 +1,22 @@
+# Treino de subida: um motor do 1º estágio falha (sem aviso) entre T+40 s e
+# T+70 s. A equipe tem de perceber, avaliar o desempenho e decidir.
+name = "Treino: falha de motor na subida"
+description = "Lançador médio em Alcântara a T-5 min; um motor do 1º estágio falha entre T+40 e T+70 s, sem aviso"
+
+[[vehicles]]
+vehicle = "medio_sso"
+name = "Satélite de observação"
+place = "pad"
+site = "Alcântara"
+t_minus = 300
+
+[weather]
+surface_wind = 7
+evolve = false
+
+[[faults]]
+vehicle = "Satélite de observação"
+fault = "engine"
+arg = "5"
+met_s = 40
+window_s = 30

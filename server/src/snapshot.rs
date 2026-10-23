@@ -28,8 +28,9 @@ pub fn hello(a: &mut App) -> String {
         "type": "hello",
         "version": env!("CARGO_PKG_VERSION"),
         "t": w.t,
-        "scenarios": scenarios::SCENARIOS,
-        "catalog": catalog::ENTRIES,
+        "scenarios": scenario_list(a),
+        "catalog": catalog_list(a),
+        "procedures": procedure_list(a),
         "commands": commands::dictionary().into_iter().chain(crate::ksp::commands()).collect::<Vec<_>>(),
         "faults": FAULTS.iter().map(|(id, name, arg)| json!({"id": id, "name": name, "arg": arg})).collect::<Vec<_>>(),
         "stations": w.stations,
@@ -40,6 +41,35 @@ pub fn hello(a: &mut App) -> String {
         "roles": crate::room::roles_json(),
     })
     .to_string()
+}
+
+/// Cenários prontos e os dos arquivos.
+fn scenario_list(a: &App) -> Value {
+    let mut v: Vec<Value> = scenarios::SCENARIOS.iter().map(|s| json!(s)).collect();
+    v.extend(a.library.scenarios.iter().map(|(id, s)| json!({"id": id, "name": s.name, "description": s.description, "file": true})));
+    json!(v)
+}
+
+fn catalog_list(a: &App) -> Value {
+    let mut v: Vec<Value> = catalog::ENTRIES.iter().map(|e| json!(e)).collect();
+    v.extend(a.library.vehicles.iter().map(|(id, f)| {
+        let kind = a.library.vehicle(id).map(|x| x.kind.id()).unwrap_or("");
+        json!({"id": id, "name": f.name, "kind": kind, "description": f.description, "file": true})
+    }));
+    json!(v)
+}
+
+fn procedure_list(a: &App) -> Value {
+    json!(a.library.procedures.iter().map(|(id, p)| {
+        let mut v = json!(p);
+        v["id"] = json!(format!("arquivo:{id}"));
+        v
+    }).collect::<Vec<_>>())
+}
+
+/// As listas que mudam quando um arquivo de missão é salvo.
+pub fn library(a: &App) -> Value {
+    json!({"type": "library", "scenarios": scenario_list(a), "catalog": catalog_list(a), "procedures": procedure_list(a)})
 }
 
 fn event(e: &jaci_sim::vehicle::Event) -> Value {

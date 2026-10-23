@@ -1,0 +1,11 @@
+# VSB-30 com uma carga de 600 kg: apogeu mais baixo e menos microgravidade.
+name = "VSB-30 com carga pesada"
+description = "VSB-30 levando 600 kg de experimentos, com o ponto de queda mais perto da costa"
+base = "vsb30"
+payload_kg = 600
+landing_target = [-1.6, -42.5]
+
+[sounding]
+elevation_deg = 85
+azimuth_deg = 40
+stage2_delay = 6

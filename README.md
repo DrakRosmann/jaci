@@ -21,6 +21,7 @@ Jaci é a deusa tupi da Lua.
 | [`web/`](web/) | interface (TypeScript + React + three.js): os consoles |
 | [`ksp/`](ksp/) | ponte com o Kerbal Space Program: o script do kOS (`jaci.ks`), o boot e o patch do Module Manager |
 | [`docs/`](docs/) | protocolo da interface, do enlace CCSDS e da ponte com o kOS |
+| [`missoes/`](missoes/) | exemplos de veículos, cenários e procedimentos em arquivos (TOML) |
 | [`tests/`](tests/) | teste de ponta a ponta do servidor |
 
 ## Instalar
@@ -71,6 +72,22 @@ os eventos, `l` troca a língua e `?` lista os atalhos (nenhum manda comando a v
 | `marte` | Sonda e estágio de escape em órbita de estacionamento, na janela de Marte de 2026: porkchop, injeção, cruzeiro, correção e captura |
 | `lua` | Sonda lunar: injeção translunar e inserção em órbita da Lua |
 | `ksp` | Nenhum veículo simulado: só as naves do Kerbal Space Program (veja abaixo) |
+
+### Missões em arquivos
+
+Veículos, cenários e procedimentos novos também podem ser escritos em TOML, sem recompilar, na
+pasta `missoes/` (ao lado de `estados/`; instalado, `~/.local/share/jaci/missoes`, que começa com
+os exemplos). Um veículo parte de um do catálogo com ajustes (carga, propelente, órbita alvo,
+tripulação, alvo de pouso…) ou monta uma pilha nova de estágios e motores; um cenário põe veículos
+na plataforma ou em órbita, com hora, clima, aceleração, satélites reais e falhas planejadas; um
+procedimento tem passos de nota, verificação, comando e espera por uma condição
+(`until = "eps.soc > 80 and phase == 'orbit'"`). Os cenários de arquivo aparecem na lista junto dos
+prontos (e em `jaci --list`), e os procedimentos no console de procedimentos. O console
+**Instrutor** tem um editor que confere o arquivo (montando o veículo ou o cenário) antes de salvar
+e avisa as outras telas. O formato está em [`missoes/LEIAME.md`](missoes/LEIAME.md), com
+exemplos: um VSB-30 com carga pesada, um lançador leve montado do zero (que chega a 500 km,
+heliossíncrona, nos testes de voo), um treino com falha de motor sorteada na subida, um cenário
+com a ISS real e um procedimento de bateria baixa.
 
 ## Consoles
 

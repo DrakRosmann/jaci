@@ -6,7 +6,7 @@
 // JACI_BIN aponta outro binário; ONLY=texto roda só os cenários com o texto no nome.
 
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, appendFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, appendFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -426,6 +426,49 @@ const cases = [
       } finally {
         others.forEach((c) => c.close())
         s.close()
+      }
+    },
+  ],
+  [
+    'missões em arquivos: listar, conferir, salvar e carregar',
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'jaci-missoes-'))
+      cpSync(new URL('../missoes', import.meta.url).pathname, dir, { recursive: true })
+      const s = await server('sondagem', ['--missions-dir', dir])
+      try {
+        const c = s.ws
+        assert(c.hello.scenarios.some((x) => x.id === 'treino-falha-de-motor' && x.file), 'cenário de arquivo na saudação')
+        assert(c.hello.catalog.some((x) => x.id === 'lancador-leve' && x.kind === 'satellite'), 'veículo de arquivo no catálogo')
+        assert(c.hello.procedures.some((p) => p.id === 'arquivo:bateria-baixa'), 'procedimento de arquivo')
+        const files = await c.request({ type: 'sim', action: 'files' })
+        assert(files.list.length >= 5 && !files.list.some((f) => f.error), `arquivos: ${JSON.stringify(files.list)}`)
+        const bad = await c.request({ type: 'sim', action: 'file_validate', sub: 'cenarios', id: 'ruim', text: 'name = "R"\n[[vehicles]]\nvehicle = "nao_existe"\nplace = "pad"\n' })
+        assert(!bad.ok && /nao_existe/.test(bad.error), `erro: ${bad.error}`)
+        const other = await connect(s.port)
+        let lib = null
+        other.ws.addEventListener('message', (m) => { const d = JSON.parse(m.data); if (d.type === 'library') lib = d })
+        const text = 'name = "Duas sondas"\n[[vehicles]]\nvehicle = "vsb30-carga-pesada"\nplace = "pad"\nt_minus = 120\n[[vehicles]]\nvehicle = "amazonia"\nplace = "orbit"\npe_km = 600\ninc_deg = 98\n'
+        const saved = await c.request({ type: 'sim', action: 'file_save', sub: 'cenarios', id: 'duas sondas!', text })
+        assert(saved.ok && saved.id === 'duas-sondas', `salvar: ${saved.error} ${saved.id}`)
+        assert(existsSync(join(dir, 'cenarios', 'duas-sondas.toml')), 'arquivo gravado')
+        for (let i = 0; i < 20 && !lib; i++) await sleep(50)
+        assert(lib?.scenarios.some((x) => x.id === 'duas-sondas'), 'as outras telas não souberam')
+        other.close()
+        const ld = await c.request({ type: 'sim', action: 'scenario', value: 'duas-sondas' })
+        assert(ld.type === 'reload', `carregar: ${ld.error}`)
+        const c2 = await connect(s.port)
+        try {
+          const snap = await until(c2, 'cenário de arquivo', (x) => x.mission === 'Duas sondas')
+          assert(snap.vehicles.length === 2 && snap.launch.t_minus <= 120, 'veículos do cenário')
+        } finally {
+          c2.close()
+        }
+        // Nome do catálogo não pode ser usado.
+        const dup = await c.request({ type: 'sim', action: 'file_save', sub: 'veiculos', id: 'vsb30', text: 'name = "X"\nbase = "vsb30"\n' })
+        assert(!dup.ok, 'sobrescreveu o catálogo')
+      } finally {
+        s.close()
+        rmSync(dir, { recursive: true, force: true })
       }
     },
   ],

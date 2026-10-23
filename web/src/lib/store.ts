@@ -147,6 +147,10 @@ class Store {
       case 'dictionary':
         this.dictionary = d.dictionary
         break
+      case 'library':
+        // Um arquivo de missão foi salvo: cenários, catálogo e procedimentos novos.
+        if (this.hello) this.hello = { ...this.hello, scenarios: d.scenarios, catalog: d.catalog, procedures: d.procedures }
+        break
       case 'history':
         // Telemetria de antes de conectar, para os gráficos.
         this.loadHistory(d.vehicles)

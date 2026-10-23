@@ -5,6 +5,7 @@ import { met } from '../lib/format'
 import { store, useStore } from '../lib/store'
 import type { RecordingEntry } from '../types'
 import { FaultPlan, TrainingReport } from './Training'
+import { Missions } from './Missions'
 
 export function Instructor() {
   const hello = useStore((s) => s.hello)!
@@ -32,6 +33,7 @@ export function Instructor() {
           {hello.scenarios.map((s) => (
             <option key={s.id} value={s.id}>
               {tx(s.name)}
+              {s.file ? ` (${t('arquivo')})` : ''}
             </option>
           ))}
         </select>
@@ -157,6 +159,7 @@ export function Instructor() {
         </div>
       </Panel>
       <TrainingReport />
+      <Missions />
       <Panel title={t('Catálogo de veículos')} flush>
         <div style={{ maxHeight: 320, overflowY: 'auto' }}>
           {hello.catalog.map((c) => (

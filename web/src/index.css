@@ -235,6 +235,53 @@ a.button:hover {
   margin-left: 4px;
 }
 
+.missions {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 12px;
+}
+.missions .files {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 520px;
+  overflow-y: auto;
+}
+.missions .file {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 3px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.missions .file.active {
+  background: #16274a;
+}
+.missions .file.bad {
+  color: var(--bad);
+}
+.missions .editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.missions textarea {
+  width: 100%;
+  font-size: 12px;
+  line-height: 1.45;
+  resize: vertical;
+  tab-size: 2;
+}
+@media (max-width: 900px) {
+  .missions {
+    grid-template-columns: 1fr;
+  }
+}
+
 .sound {
   position: relative;
   display: flex;

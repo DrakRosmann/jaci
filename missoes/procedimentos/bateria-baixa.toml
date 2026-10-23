@@ -1,0 +1,41 @@
+# Bateria baixa num satélite: corta o não essencial, aponta ao Sol e espera
+# a carga voltar antes de retomar a operação.
+name = "Bateria baixa (satélite)"
+description = "Modo de segurança, painéis ao Sol e espera da recarga"
+kinds = ["satellite", "probe"]
+
+[[steps]]
+kind = "check"
+text = "Confirme no console de subsistemas: bateria abaixo de 40 % e descarregando"
+
+[[steps]]
+kind = "cmd"
+text = "Entrar em modo de segurança (corta as cargas não essenciais)"
+cmd = "safe_mode"
+args = { on = "on" }
+
+[[steps]]
+kind = "cmd"
+text = "Apontar os painéis ao Sol"
+cmd = "att_mode"
+args = { mode = "sun" }
+
+[[steps]]
+kind = "wait"
+text = "Fora do eclipse e carregando"
+until = "eps.battery > 0"
+
+[[steps]]
+kind = "wait"
+text = "Bateria acima de 80 %"
+until = "eps.soc > 80"
+
+[[steps]]
+kind = "cmd"
+text = "Sair do modo de segurança"
+cmd = "safe_mode"
+args = { on = "off" }
+
+[[steps]]
+kind = "note"
+text = "Religue a carga útil no console de subsistemas e registre o evento"

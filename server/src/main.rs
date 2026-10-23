@@ -88,6 +88,10 @@ struct Args {
     /// Pasta das gravações (padrão: ao lado da pasta dos estados salvos).
     #[arg(long)]
     recordings_dir: Option<PathBuf>,
+    /// Pasta das missões em arquivos (veiculos/, cenarios/, procedimentos/);
+    /// padrão: ao lado da pasta dos estados salvos.
+    #[arg(long)]
+    missions_dir: Option<PathBuf>,
     /// Sala com posições: cada tela entra numa (FLIGHT, FIDO, EECOM, …) e só
     /// comanda o que é dela. Também se liga pelo console do instrutor.
     #[arg(long)]
@@ -117,6 +121,9 @@ pub struct App {
     pub recorder: Option<recording::Recorder>,
     /// Reprodução de uma gravação: a simulação fica parada enquanto isso.
     pub replay: Option<recording::Replay>,
+    /// Veículos, cenários e procedimentos em arquivos.
+    pub library: jaci_sim::library::Library,
+    pub missions_dir: PathBuf,
     /// Sala com posições e permissões.
     pub room: bool,
     /// Quem está em qual posição, por conexão.
@@ -125,6 +132,23 @@ pub struct App {
 }
 
 impl App {
+    /// Monta um cenário pronto ou de arquivo.
+    fn build_scenario(&self, id: &str, t: f64, seed: u64) -> Result<World, String> {
+        match scenarios::build(id, t, seed) {
+            Some(w) => Ok(w),
+            None => self.library.scenario(id, t, seed),
+        }
+    }
+
+    /// Lê de novo a pasta de missões; devolve a mensagem para as interfaces.
+    fn reload_library(&mut self) -> String {
+        self.library = jaci_sim::library::Library::load(&self.missions_dir);
+        for (f, e) in &self.library.errors {
+            tracing::warn!("missões: {f}: {e}");
+        }
+        snapshot::library(self).to_string()
+    }
+
     /// Começa a gravar (nome automático se vazio).
     fn start_recording(&mut self, name: Option<&str>) -> Result<String, String> {
         if self.replay.is_some() {
@@ -262,6 +286,25 @@ fn states_dir(args: &Args) -> PathBuf {
     data.join("jaci/estados")
 }
 
+/// Missões em arquivos: a pedida ou a pasta irmã da dos estados salvos. Na
+/// primeira vez, instalado, copia os exemplos que vêm com o Jaci.
+fn missions_dir(args: &Args, states: &std::path::Path) -> PathBuf {
+    let dir = args.missions_dir.clone().unwrap_or_else(|| states.with_file_name("missoes"));
+    if !dir.exists() {
+        let examples = std::env::current_exe().ok().and_then(|e| e.parent()?.parent().map(|p| p.join("share/jaci/missoes")));
+        if let Some(src) = examples.filter(|d| d.is_dir()) {
+            for (sub, _) in jaci_sim::library::KINDS {
+                let _ = std::fs::create_dir_all(dir.join(sub));
+                for f in std::fs::read_dir(src.join(sub)).into_iter().flatten().flatten() {
+                    let _ = std::fs::copy(f.path(), dir.join(sub).join(f.file_name()));
+                }
+            }
+            let _ = std::fs::copy(src.join("LEIAME.md"), dir.join("LEIAME.md"));
+        }
+    }
+    dir
+}
+
 /// Gravações: a pedida ou a pasta irmã da dos estados salvos.
 fn recordings_dir(args: &Args, states: &std::path::Path) -> PathBuf {
     args.recordings_dir.clone().unwrap_or_else(|| states.with_file_name("gravacoes"))
@@ -297,9 +340,18 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
     let args = Args::parse();
+    let states = states_dir(&args);
+    let mdir = missions_dir(&args, &states);
+    let library = jaci_sim::library::Library::load(&mdir);
+    for (f, e) in &library.errors {
+        tracing::warn!("missões: {f}: {e}");
+    }
     if args.list {
         for s in scenarios::SCENARIOS {
             println!("{:<12} {} — {}", s.id, s.name, s.description);
+        }
+        for (id, s) in &library.scenarios {
+            println!("{id:<12} {} — {} (arquivo)", s.name, s.description);
         }
         return Ok(());
     }
@@ -308,13 +360,15 @@ async fn main() -> anyhow::Result<()> {
         None => now_j2000(),
     };
     let scenario = args.scenario.clone().unwrap_or_else(|| if args.ksp.is_some() { "ksp" } else { "sondagem" }.into());
-    let world = scenarios::build(&scenario, t0, args.seed).with_context(|| format!("cenário desconhecido: {scenario}"))?;
+    let world = match scenarios::build(&scenario, t0, args.seed) {
+        Some(w) => w,
+        None => library.scenario(&scenario, t0, args.seed).map_err(|e| anyhow::anyhow!(e))?,
+    };
     let ksp_link = match &args.ksp {
         Some(dir) => Some(connect_ksp(dir.clone())?),
         None => None,
     };
     tracing::info!("cenário {} em {}", world.mission, format_utc(world.t));
-    let states = states_dir(&args);
     let mut world = world;
     let satellites_file = states.with_file_name("satelites.tle");
     if let Ok(text) = std::fs::read_to_string(&satellites_file) {
@@ -331,6 +385,8 @@ async fn main() -> anyhow::Result<()> {
         world,
         satellites_file,
         recordings_dir: recordings_dir(&args, &states),
+        library,
+        missions_dir: mdir,
         recorder: None,
         replay: None,
         room: args.room,
@@ -787,7 +843,13 @@ fn handle(ctx: &Ctx, conn: u64, msg: &Value) -> Option<Value> {
             }
         }
         "sim" => {
-            let out = sim(&mut a, msg, &req);
+            let mut out = sim(&mut a, msg, &req);
+            // Biblioteca de missões mudou: todas as interfaces recebem as listas novas.
+            if let Some(b) = out.as_object_mut().and_then(|o| o.remove("broadcast")) {
+                if let Some(text) = b.as_str() {
+                    let _ = ctx.tx.send(Arc::from(text));
+                }
+            }
             // Mundo novo (cenário, estado ou reprodução): todas as interfaces recomeçam.
             if out["type"] == "reload" {
                 let _ = ctx.tx.send(Arc::from(json!({"type": "reload"}).to_string()));
@@ -910,8 +972,8 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
         "scenario" => {
             let id = msg.get("value").and_then(|x| x.as_str()).unwrap_or("sondagem");
             let t = msg.get("start").and_then(|x| x.as_str()).and_then(parse_utc).unwrap_or_else(now_j2000);
-            match scenarios::build(id, t, 2026) {
-                Some(nw) => {
+            match a.build_scenario(id, t, 2026) {
+                Ok(nw) => {
                     a.stop_recording();
                     a.replace_world(nw);
                     a.dict_sig.clear();
@@ -919,7 +981,7 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
                     a.history.clear();
                     json!({"type": "reload", "req": req})
                 }
-                None => json!({"type": "sim_result", "req": req, "ok": false, "error": "cenário desconhecido"}),
+                Err(e) => json!({"type": "sim_result", "req": req, "ok": false, "error": e}),
             }
         }
         "save" => {
@@ -1111,6 +1173,59 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
             } else {
                 json!({"type": "sim_result", "req": req, "ok": false, "error": "satélite não encontrado"})
             }
+        }
+        "files" => {
+            let lib = &a.library;
+            let mut list: Vec<Value> = Vec::new();
+            for (id, f) in &lib.vehicles {
+                list.push(json!({"sub": "veiculos", "id": id, "name": f.name}));
+            }
+            for (id, f) in &lib.scenarios {
+                list.push(json!({"sub": "cenarios", "id": id, "name": f.name}));
+            }
+            for (id, f) in &lib.procedures {
+                list.push(json!({"sub": "procedimentos", "id": id, "name": f.name}));
+            }
+            for (f, e) in &lib.errors {
+                let (sub, file) = f.split_once('/').unwrap_or(("", f));
+                list.push(json!({"sub": sub, "id": file.trim_end_matches(".toml"), "name": null, "error": e}));
+            }
+            json!({"type": "files", "req": req, "list": list, "dir": a.missions_dir.display().to_string()})
+        }
+        "file_get" => {
+            let sub = msg.get("sub").and_then(|x| x.as_str()).unwrap_or("");
+            let id = jaci_sim::library::clean_id(msg.get("id").and_then(|x| x.as_str()).unwrap_or(""));
+            if !jaci_sim::library::KINDS.iter().any(|(k, _)| *k == sub) || id.is_empty() {
+                return json!({"type": "file", "req": req, "ok": false, "error": "arquivo inválido"});
+            }
+            match std::fs::read_to_string(a.missions_dir.join(sub).join(format!("{id}.toml"))) {
+                Ok(text) => json!({"type": "file", "req": req, "ok": true, "sub": sub, "id": id, "text": text}),
+                Err(e) => json!({"type": "file", "req": req, "ok": false, "error": e.to_string()}),
+            }
+        }
+        "file_validate" | "file_save" => {
+            let sub = msg.get("sub").and_then(|x| x.as_str()).unwrap_or("");
+            let id = jaci_sim::library::clean_id(msg.get("id").and_then(|x| x.as_str()).unwrap_or(""));
+            let text = msg.get("text").and_then(|x| x.as_str()).unwrap_or("");
+            if !jaci_sim::library::KINDS.iter().any(|(k, _)| *k == sub) || id.is_empty() {
+                return json!({"type": "sim_result", "req": req, "ok": false, "error": "dê um nome ao arquivo (letras, números, - e _)"});
+            }
+            if let Err(e) = a.library.validate(sub, &id, text) {
+                return json!({"type": "sim_result", "req": req, "ok": false, "error": e, "id": id});
+            }
+            if action == "file_validate" {
+                return json!({"type": "sim_result", "req": req, "ok": true, "message": "arquivo correto", "id": id});
+            }
+            let path = a.missions_dir.join(sub).join(format!("{id}.toml"));
+            if let Err(e) = std::fs::create_dir_all(a.missions_dir.join(sub)).and_then(|_| std::fs::write(&path, text)) {
+                return json!({"type": "sim_result", "req": req, "ok": false, "error": e.to_string()});
+            }
+            let lib = a.reload_library();
+            json!({"type": "sim_result", "req": req, "ok": true, "message": format!("salvo em {}", path.display()), "id": id, "broadcast": lib})
+        }
+        "files_reload" => {
+            let lib = a.reload_library();
+            json!({"type": "sim_result", "req": req, "ok": true, "message": format!("{} arquivo(s) com erro", a.library.errors.len()), "broadcast": lib})
         }
         "room_mode" => {
             a.room = msg.get("value").and_then(|x| x.as_bool()).unwrap_or(!a.room);

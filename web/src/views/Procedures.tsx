@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Empty, Panel, sendCommand } from '../components/ui'
 import { t } from '../lib/i18n'
 import { utc } from '../lib/format'
-import { PROCEDURES, type Procedure } from '../lib/procedures'
+import { PROCEDURES, fromFiles, type Procedure } from '../lib/procedures'
 import { store, useStore } from '../lib/store'
 
 interface Run {
@@ -18,14 +18,17 @@ export function Procedures() {
   const snap = useStore((s) => s.snap)!
   const [runs, setRuns] = useState<Record<string, Run>>({})
   const [sel, setSel] = useState<string>('countdown')
-  const list = PROCEDURES.filter((p) => !v || p.kinds.length === 0 || p.kinds.includes(v.kind))
+  // Os prontos e os dos arquivos de missão.
+  const files = useStore((s) => s.hello?.procedures)
+  const all = useMemo(() => [...PROCEDURES, ...fromFiles(files)], [files])
+  const list = all.filter((p) => !v || p.kinds.length === 0 || p.kinds.includes(v.kind))
   const proc = list.find((p) => p.id === sel) ?? list[0]
   const key = v && proc ? `${proc.id}:${v.id}` : ''
   const run = runs[key]
 
   // O servidor anota início, passos e fim, para o registro de eventos e o relatório do treino.
   const log = (r: Run, kind: 'start' | 'step' | 'done', step?: number) => {
-    const p = PROCEDURES.find((x) => x.id === r.proc)
+    const p = all.find((x) => x.id === r.proc)
     if (p) store.sim('proc_log', { vehicle: r.vehicle, procedure: p.name, kind, step, total: p.steps.length }).catch(() => {})
   }
 

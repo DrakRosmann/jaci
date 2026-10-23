@@ -57,7 +57,7 @@ pub fn place_in_orbit(v: &mut Vehicle, central: Body, pe_km: f64, ap_km: f64, in
     v.guidance.inserted = true;
 }
 
-fn on_pad(v: &mut Vehicle, site: Site, t: f64) {
+pub fn on_pad(v: &mut Vehicle, site: Site, t: f64) {
     v.site = Some(site);
     v.phase = Phase::Prelaunch;
     v.released = false;

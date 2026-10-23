@@ -1,7 +1,8 @@
 // Procedimentos de operação: cada passo é uma nota, uma verificação manual, um
 // comando ou uma espera por uma condição. A interface executa e acompanha.
 
-import type { Snapshot, Vehicle } from '../types'
+import type { ProcedureFile, Snapshot, Vehicle } from '../types'
+import { compile } from './expr'
 
 export type Step =
   | { kind: 'note'; text: string }
@@ -167,3 +168,27 @@ export const PROCEDURES: Procedure[] = [
     ],
   },
 ]
+
+/** Procedimentos dos arquivos de missão no formato dos daqui. Condição inválida não trava: o passo diz o erro. */
+export function fromFiles(list: ProcedureFile[] | undefined): Procedure[] {
+  return (list ?? []).map((p) => ({
+    id: p.id,
+    name: p.name,
+    description: p.description,
+    kinds: p.kinds,
+    steps: p.steps.map((st): Step => {
+      switch (st.kind) {
+        case 'cmd':
+          return { kind: 'cmd', text: st.text, cmd: st.cmd ?? '', args: st.args, hazardous: st.hazardous }
+        case 'wait':
+          try {
+            return { kind: 'wait', text: st.text, until: compile(st.until ?? '') }
+          } catch (e) {
+            return { kind: 'wait', text: `${st.text} (${String((e as Error).message ?? e)})`, until: () => false }
+          }
+        default:
+          return { kind: st.kind, text: st.text }
+      }
+    }),
+  }))
+}

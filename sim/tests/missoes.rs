@@ -372,3 +372,36 @@ fn depurar_injecao() {
     let el = &v.derived.elements;
     println!("e = {:.3}, energia C3 = {:.1}", el.e, (v.v.norm2() - 2.0 * Body::Earth.mu() / v.r.norm()) / 1e6);
 }
+
+/// Monta um cenário só com um veículo de arquivo na plataforma de Alcântara.
+fn file_vehicle_on_pad(id: &str) -> World {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../missoes");
+    let mut lib = jaci_sim::library::Library::load(&dir);
+    assert!(lib.errors.is_empty(), "{:?}", lib.errors);
+    lib.insert("cenarios", "teste_arquivo", &format!("name = \"Teste\"\n[[vehicles]]\nvehicle = \"{id}\"\nplace = \"pad\"\nsite = \"Alcântara\"\nt_minus = 60\n")).unwrap();
+    lib.scenario("teste_arquivo", t0(), 3).unwrap()
+}
+
+#[test]
+fn arquivo_lancador_leve_chega_a_orbita() {
+    let mut w = file_vehicle_on_pad("lancador-leve");
+    let vid = launch(&mut w);
+    run_until(&mut w, 5_000.0, |w| w.vehicle(vid).is_some_and(|v| v.guidance.inserted && v.stages.iter().all(|s| s.spacecraft)));
+    print_events(&w);
+    let (pe, ap, inc) = orbit_of(&w, vid);
+    println!("órbita {pe:.0} × {ap:.0} km, {inc:.2}°");
+    assert!(pe > 400.0 && ap < 650.0, "{pe} × {ap}");
+    assert!((inc - 97.4).abs() < 1.5, "inclinação {inc}");
+}
+
+#[test]
+fn arquivo_vsb30_pesado_sobe_menos_e_cai_no_mar() {
+    let mut w = file_vehicle_on_pad("vsb30-carga-pesada");
+    let vid = launch(&mut w);
+    run_until(&mut w, 1_500.0, |w| w.vehicle(vid).unwrap().phase.is_final());
+    let v = w.vehicle(vid).unwrap();
+    let apogee = v.stats.max_alt / 1e3;
+    println!("apogeu {apogee:.0} km, fase {:?}", v.phase);
+    assert!(apogee > 100.0 && apogee < 240.0, "apogeu {apogee}");
+    assert_eq!(v.phase, Phase::Splashdown);
+}

@@ -19,6 +19,9 @@ install -Dm0755 target/release/computador-de-bordo "$prefix/bin/computador-de-bo
 rm -rf "$prefix/share/jaci/web"
 mkdir -p "$prefix/share/jaci"
 cp -r web/dist "$prefix/share/jaci/web"
+# Exemplos de missões em arquivos: copiados para a pasta do usuário na primeira vez.
+rm -rf "$prefix/share/jaci/missoes"
+cp -r missoes "$prefix/share/jaci/missoes"
 install -Dm0644 web/public/jaci.svg "$prefix/share/icons/hicolor/scalable/apps/$id.svg"
 mkdir -p "$prefix/share/applications"
 cat > "$prefix/share/applications/$id.desktop" <<DESKTOP

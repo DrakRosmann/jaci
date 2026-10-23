@@ -1,0 +1,49 @@
+# Um lançador leve de dois estágios a querosene/LOX montado do zero, com os
+# subsistemas do satélite de observação do catálogo.
+name = "Lançador leve + microssatélite"
+description = "Dois estágios a líquido (tipo Electron) com um microssatélite de 150 kg para 500 km, heliossíncrona"
+kind = "satellite"
+systems_from = "amazonia"
+fairing_kg = 50
+
+[ascent]
+target_pe_km = 500
+target_ap_km = 500
+inclination_deg = 97.4
+north = false
+max_g = 6
+
+[[stages]]
+name = "1º estágio"
+dry_kg = 950
+propellant_kg = 9250
+diameter_m = 1.2
+length_m = 12
+[[stages.engines]]
+name = "Motor"
+count = 9
+thrust_kn = 25.8
+isp_vac = 311
+isp_sl = 303
+min_throttle = 0.8
+pc_bar = 120
+
+[[stages]]
+name = "2º estágio"
+dry_kg = 250
+propellant_kg = 2050
+diameter_m = 1.2
+length_m = 2.4
+[[stages.engines]]
+name = "Motor de vácuo"
+thrust_kn = 25.8
+isp_vac = 343
+isp_sl = 250
+ignitions = 3
+min_throttle = 0.5
+pc_bar = 120
+
+[[stages]]
+name = "Microssatélite"
+dry_kg = 150
+spacecraft = true
