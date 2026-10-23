@@ -29,6 +29,8 @@ pub const ENTRIES: &[CatalogEntry] = &[
     CatalogEntry { id: "amazonia", name: "Satélite de observação", kind: "satellite", description: "Satélite de 640 kg com câmera, rodas de reação e bobinas magnéticas, já em órbita" },
     CatalogEntry { id: "sonda_marte", name: "Sonda marciana + estágio de escape", kind: "probe", description: "Estágio superior hidrogênio/LOX em órbita de estacionamento e sonda de 2,2 t (tipo MRO)" },
     CatalogEntry { id: "sonda_lua", name: "Sonda lunar + estágio de escape", kind: "probe", description: "Estágio superior em órbita de estacionamento e sonda de 1,9 t (tipo LRO)" },
+    CatalogEntry { id: "modulo_lunar", name: "Módulo lunar", kind: "capsule", description: "Estágio de descida com motor de 45 kN que regula até 10 % e estágio de subida, para 2 tripulantes (tipo LM do Apollo)" },
+    CatalogEntry { id: "sonda_pouso_marte", name: "Sonda de pouso em Marte", kind: "probe", description: "Escudo térmico, paraquedas supersônico e descida propulsada até as pernas (tipo Phoenix/InSight)" },
 ];
 
 /// Locais de lançamento conhecidos.
@@ -757,6 +759,60 @@ pub fn build(id: &str) -> Option<Vehicle> {
         "amazonia" => {
             let (core, sys) = sat_observacao();
             base(Kind::Satellite, id, "Satélite de observação", vec![core], Some(sys), Shape::Box)
+        }
+        "modulo_lunar" => {
+            let descent = stage("Estágio de descida", 2_150.0, 8_200.0, vec![engine("Motor de descida", 45.0, 311.0, 250.0, 0.10, 3, 7.4)], 4.2, 3.2);
+            let ascent = spacecraft_stage("Estágio de subida", 2_200.0, 2_350.0, vec![engine("Motor de subida", 16.0, 311.0, 250.0, 1.0, 2, 8.4)], 4.0);
+            let sys = Systems {
+                power: power(
+                    0.0,
+                    0.0,
+                    false,
+                    30_000.0,
+                    vec![
+                        load("obc", "Computador de guiamento", 150.0, true),
+                        load("ttc", "Rádio em banda S", 120.0, true),
+                        load("adcs", "Controle de atitude", 200.0, true),
+                        load("eclss", "Suporte de vida", 300.0, true),
+                        load("radar", "Radar de pouso", 120.0, true),
+                    ],
+                ),
+                thermal: thermal(4_700.0, 20.0, true),
+                adcs: adcs(Vec3::new(9_000.0, 12_000.0, 12_000.0), None, 900.0, 280.0, 400.0, false),
+                comms: comms(20.0, 2.2, 3.0, 25.0, 12.0, &[1.6, 51.2], 100.0, false),
+                eclss: Some(eclss(2, &[("Cabine", 6.7)], 48.0, 10.0, 2.0, UNLIMITED, 0.0, 150.0)),
+                instruments: vec![],
+            };
+            let mut v = base(Kind::Capsule, id, "Módulo lunar Jaci", vec![descent, ascent], Some(sys), Shape::Box);
+            v.landing = LandingMode::Legs;
+            v.guidance.auto_stage = false;
+            v.guidance.auto_chutes = false;
+            v
+        }
+        "sonda_pouso_marte" => {
+            let core = spacecraft_stage("Sonda de pouso", 350.0, 80.0, vec![engine("Propulsores de descida 12×293 N", 3.5, 220.0, 200.0, 0.10, 5, 15.0)], 2.64);
+            let mut p = power(4.0, 0.28, false, 1_000.0, vec![load("obc", "Computador de bordo", 40.0, true), load("ttc", "Rádio UHF (relé)", 30.0, true), load("adcs", "Controle de atitude", 30.0, true)]);
+            if let Some(sa) = &mut p.solar {
+                sa.deployed = false;
+            }
+            let sys = Systems {
+                power: p,
+                thermal: thermal(600.0, 6.0, false),
+                adcs: adcs(Vec3::new(150.0, 150.0, 150.0), None, 20.0, 25.0, 30.0, false),
+                comms: comms(8.0, 0.4, 2.0, 0.0, 0.0, &[8.0, 128.0], 2_000.0, true),
+                eclss: None,
+                instruments: vec![instrument("met", "Estação meteorológica", 15.0, 0.01, true), instrument("cam", "Câmera estéreo", 20.0, 2.0, false)],
+            };
+            let mut v = base(Kind::Probe, id, "Sonda de pouso Jaci", vec![core], Some(sys), Shape::Capsule);
+            v.nose_radius = 1.3;
+            v.heat_shield = Some(HeatShield { ablator_kg: 60.0, initial_kg: 60.0, ablation_heat: 30e6, area: 5.5, temp: 293.0, flux: 0.0, peak_flux: 0.0, heat_load: 0.0 });
+            v.chutes = vec![Chute { name: "Paraquedas supersônico".into(), cda: 65.0, deploy_alt: 12_000.0, max_mach: 2.2, drogue: false, state: ChuteState::Stowed, inflation: 0.0 }];
+            v.landing = LandingMode::Legs;
+            v.guidance.ballistic = true;
+            v.guidance.auto_stage = false;
+            v.guidance.auto_chutes = true;
+            v.guidance.auto_pdi_alt = Some(1_200.0);
+            v
         }
         "sonda_marte" | "sonda_lua" => {
             let mut upper = stage("Estágio de escape", 2_250.0, 20_830.0, vec![engine("Motor H₂/LOX", 99.2, 451.0, 200.0, 1.0, 3, 42.0)], 3.05, 12.7);

@@ -71,6 +71,8 @@ os eventos, `l` troca a língua e `?` lista os atalhos (nenhum manda comando a v
 | `observacao` | Satélite de observação em operação: câmera, gravador de bordo, passagens nas estações, rodas de reação |
 | `marte` | Sonda e estágio de escape em órbita de estacionamento, na janela de Marte de 2026: porkchop, injeção, cruzeiro, correção e captura |
 | `lua` | Sonda lunar: injeção translunar e inserção em órbita da Lua |
+| `pouso-lua` | Módulo lunar em 15 × 110 km chegando ao perilúnio: comando `pdi` (ou o botão no console PILOT) e o guiamento freia, inclina para a vertical a ~2,5 km e pousa nas pernas a 1,5 m/s, como o P63/P64/P66 do Apollo |
+| `pouso-marte` | Sonda de pouso entrando em Marte: escudo térmico, paraquedas supersônico a Mach 2, e a 1,2 km larga o paraquedas e desce no motor até o solo (tipo Phoenix) |
 | `ksp` | Nenhum veículo simulado: só as naves do Kerbal Space Program (veja abaixo) |
 
 ### Missões em arquivos
@@ -154,7 +156,13 @@ sequência automática de ativação de satélite.
   proteção), aborto nos modos possíveis no momento, modo seguro, terminação de voo, modos de
   atitude, pilotagem manual (setas ou teclado: W/S arfagem, A/D guinada, Q/E rolamento) que gira a
   atitude alvo pelo enlace, pulsos de translação do RCS (I/K, J/L, H/N), paraquedas, trem,
-  painéis e transmissor.
+  painéis, transmissor e, nas naves com pernas, a descida propulsada (PDI).
+* **Pouso na Lua e em Marte:** naves com pernas tocam o solo se chegarem a menos de 3,5 m/s na
+  vertical e 2,5 m/s de lado. O programa de descida propulsada segue uma curva de frenagem a
+  desaceleração constante até 15 m e depois desce a 1,5 m/s; o empuxo atende primeiro a vertical e
+  o resto mata a velocidade horizontal, e a inclinação máxima cai de 75° a 2,5 km para 20° perto do
+  chão. Em Marte, a sonda pende do paraquedas com o motor para baixo e começa a descida sozinha a
+  1,2 km.
 * **Nave em 3D (3D):** a nave montada dos estágios — diâmetros e comprimentos de verdade,
   boosters, coifa, cápsula com torre de escape, painéis solares, paraquedas abertos, plumas dos
   motores acesos —, na atitude dela em relação ao horizonte local, com os estágios e motores ao

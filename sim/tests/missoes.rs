@@ -3,6 +3,7 @@
 use jaci_sim::commands::Command;
 use jaci_sim::launch::CountState;
 use jaci_sim::scenarios;
+use jaci_sim::telemetry::LimitState;
 use jaci_sim::time::from_calendar;
 use jaci_sim::vehicle::{Kind, Phase};
 use jaci_sim::world::World;
@@ -486,3 +487,50 @@ fn pilotagem_manual_gira_a_nave() {
     println!("o eixo da nave girou {angle:.1}°");
     assert!((angle - 20.0).abs() < 2.0, "{angle}");
 }
+
+#[test]
+fn pouso_na_lua() {
+    let mut w = scenarios::build("pouso-lua", t0(), 3).unwrap();
+    let id = w.vehicles[0].id;
+    // Até o perilúnio (a altitude para de cair).
+    let mut last = f64::INFINITY;
+    run_until(&mut w, 3_600.0, |w| {
+        let a = w.vehicle(id).unwrap().derived.alt;
+        let past = a > last;
+        last = a;
+        past
+    });
+    println!("PDI a {:.1} km", w.vehicle(id).unwrap().derived.alt / 1e3);
+    assert!(w.vehicle(id).unwrap().systems.as_ref().unwrap().comms.link.is_some(), "sem enlace na PDI");
+    assert!(!w.alarms.iter().any(|a| a.level == LimitState::Red), "alarme vermelho antes da PDI: {:?}", w.alarms.iter().map(|a| &a.name).collect::<Vec<_>>());
+    w.execute(id, &Command::new("pdi")).expect("PDI");
+    run_until(&mut w, 3_600.0, |w| w.vehicle(id).unwrap().phase.is_final());
+    for e in w.events.iter().rev().take(6).rev() {
+        println!("{:>8.1} [{:?}] {}", e.t - t0(), e.level, e.text);
+    }
+    let v = w.vehicle(id).unwrap();
+    let left = v.stages[0].propellant;
+    println!("fase {:?}, propelente de descida que sobrou {left:.0} kg", v.phase);
+    assert_eq!(v.phase, Phase::Landed, "não pousou");
+    assert!(left > 300.0, "pousou quase sem propelente: {left:.0} kg");
+    assert!(w.events.iter().any(|e| e.text.starts_with("Pouso") && e.text.contains("a 1.")), "toque forte demais");
+}
+
+#[test]
+fn pouso_em_marte() {
+    let mut w = scenarios::build("pouso-marte", t0(), 3).unwrap();
+    let id = w.vehicles[0].id;
+    run_until(&mut w, 2.0 * 3_600.0, |w| w.vehicle(id).unwrap().phase.is_final());
+    for e in &w.events {
+        println!("{:>8.1} [{:?}] {}", e.t - t0(), e.level, e.text);
+    }
+    let v = w.vehicle(id).unwrap();
+    println!("fase {:?}, propelente {:.1} kg, pico de {:.1} g", v.phase, v.stages[0].propellant, v.stats.max_g);
+    assert_eq!(v.phase, Phase::Landed, "não pousou");
+    assert!(w.events.iter().any(|e| e.text.contains("Paraquedas supersônico abertos")));
+    assert!(v.stages[0].propellant > 5.0);
+    assert!(v.stats.max_g > 6.0 && v.stats.max_g < 11.0, "pico de {:.1} g na entrada", v.stats.max_g);
+    assert!(!w.alarms.iter().any(|a| a.level == LimitState::Red), "alarme vermelho no pouso");
+}
+
+

@@ -387,7 +387,7 @@ function OrbitPage({ v, height, zoom }: { v: Vehicle; height: number; zoom: numb
       })
       ctx.fillStyle = C.dim
       ctx.textAlign = 'right'
-      ctx.fillText(`${(v.central_name ?? v.central).toUpperCase()}`, w - 10, 18)
+      ctx.fillText(tx(v.central_name ?? v.central).toUpperCase(), w - 10, 18)
       ctx.textAlign = 'left'
     },
     [v, zoom, bodies, others, height],

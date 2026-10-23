@@ -24,6 +24,7 @@ pub fn run(v: &mut Vehicle, env: &Env, h: f64, out: &mut StepOutput) {
         Program::Entry => entry(v, t),
         Program::Docking => docking(v, env, out),
         Program::Rtls => rtls(v, t, out),
+        Program::PoweredDescent => powered_descent(v, out),
         Program::None => {
             v.guidance.att_cmd = None;
         }
@@ -34,6 +35,7 @@ pub fn run(v: &mut Vehicle, env: &Env, h: f64, out: &mut StepOutput) {
     nodes(v, t, h, out);
     auto_entry(v, t, out);
     chutes(v, out);
+    auto_pdi(v, out);
     post_separation(v, h, out);
 }
 
@@ -946,6 +948,125 @@ fn chutes(v: &mut Vehicle, out: &mut StepOutput) {
     if let Some(hs) = &v.heat_shield {
         let _ = hs;
     }
+}
+
+// ───────────────────────── Pouso propulsado ─────────────────────────
+
+/// Liga a descida propulsada: acende o motor e o guiamento assume a atitude.
+pub fn start_powered_descent(v: &mut Vehicle, out: &mut StepOutput) -> Result<(), String> {
+    if v.landing != LandingMode::Legs {
+        return Err("este veículo não pousa com motor".into());
+    }
+    if burn_capacity(v).0 <= 0.0 {
+        return Err("sem motor ou propelente para a descida".into());
+    }
+    v.guidance.program = Program::PoweredDescent;
+    v.guidance.nodes.retain(|n| n.done);
+    if let Some(sys) = &mut v.systems {
+        sys.adcs.mode = AttMode::Guidance;
+    }
+    if !v.any_engine_lit() {
+        v.ignite(out);
+    }
+    let ground_speed = (v.v - v.central.surface_velocity(v.r)).norm();
+    out.events.push((Level::Info, format!("Descida propulsada a {:.1} km, {:.0} m/s", v.derived.alt / 1e3, ground_speed)));
+    Ok(())
+}
+
+/// Marte: sob o paraquedas, abaixo da altitude marcada, corta o paraquedas e desce no motor.
+fn auto_pdi(v: &mut Vehicle, out: &mut StepOutput) {
+    let Some(alt) = v.guidance.auto_pdi_alt else { return };
+    let d = &v.derived;
+    if v.guidance.program == Program::PoweredDescent || v.phase.is_final() || d.vspeed >= 0.0 {
+        return;
+    }
+    if !v.chutes.iter().any(|c| c.state == ChuteState::Deployed) {
+        return;
+    }
+    if d.alt > alt {
+        // Pendurada no paraquedas, já com o motor para baixo.
+        let up = v.r.unit();
+        let down = v.att.rotate(Vec3::Z);
+        let down = if down.cross(up).norm() < 0.3 { Vec3::Z.cross(up).unit() } else { down };
+        v.guidance.att_cmd = Some(Quat::look(up, down));
+        if let Some(sys) = &mut v.systems {
+            sys.adcs.mode = AttMode::Guidance;
+        }
+        return;
+    }
+    for c in &mut v.chutes {
+        if c.state == ChuteState::Deployed {
+            c.state = ChuteState::Cut;
+        }
+    }
+    v.heat_shield = None;
+    out.events.push((Level::Info, "Paraquedas e escudo largados".into()));
+    if let Err(e) = start_powered_descent(v, out) {
+        out.events.push((Level::Alarm, format!("Descida propulsada não começou: {e}")));
+    }
+}
+
+/// Descida propulsada até pousar nas pernas, como o P63/P64/P66 do Apollo
+/// numa lei só. A velocidade de descida alvo é a menor entre a que dá para
+/// frear com folga até 15 m (√(2·a·h), mais 1,5 m/s para o toque) e a que
+/// chega ao chão junto com o fim da frenagem horizontal; o empuxo atende
+/// primeiro a vertical (gravidade menos centrífuga, mais a correção da
+/// descida) e o que sobra mata a velocidade horizontal. Lá em cima isso é a frenagem de costas para o movimento; perto
+/// do chão, a descida vertical devagar.
+fn powered_descent(v: &mut Vehicle, out: &mut StepOutput) {
+    let body = v.central;
+    let r = v.r;
+    let up = r.unit();
+    let rn = r.norm();
+    let v_surf = v.v - body.surface_velocity(r);
+    let vz = v_surf.dot(up);
+    let vh = v_surf - up * vz;
+    let alt = v.derived.alt.max(0.0);
+    let (f_max, _) = burn_capacity(v);
+    if f_max <= 0.0 {
+        v.guidance.program = Program::None;
+        out.events.push((Level::Alarm, "Descida propulsada: acabou o propelente".into()));
+        return;
+    }
+    if !v.any_engine_lit() {
+        v.ignite(out);
+    }
+    let mass = v.mass();
+    let a_max = f_max / mass;
+    let g_eff = body.mu() / (rn * rn) - vh.norm2() / rn;
+    // Velocidade de descida alvo.
+    let a_brake = (0.6 * (a_max - g_eff)).max(0.2);
+    let t_brake = 1.3 * vh.norm() / (0.8 * a_max) + 5.0;
+    let profile = |h: f64| (h / t_brake).min((2.0 * a_brake * (h - 15.0).max(0.0)).sqrt() + 1.5).clamp(1.5, 80.0);
+    let v_down = profile(alt);
+    // Quanto o alvo cai por segundo descendo na velocidade atual: entra direto
+    // (senão o controle fica τ·a atrás e chega rápido demais ao chão).
+    let ff = ((profile(alt) - profile((alt - 1.0).max(0.0))) * (-vz).max(0.0)).clamp(0.0, a_max);
+    // Vertical primeiro; o resto, para a horizontal (mais suave na fase final,
+    // em que a nave gira devagar e não pode inclinar muito).
+    let az = (((-v_down) - vz) / 2.5 + g_eff + ff).clamp(0.0, a_max * 0.97);
+    let ah_avail = (a_max * a_max - az * az).max(0.0).sqrt();
+    // Perto do chão a inclinação máxima cai aos poucos (de 75° a 2,5 km para
+    // 20° no fim), como o "pitch-up" do Apollo na portão alta.
+    let tilt = (20.0 + (alt / 2_500.0).min(1.0) * 55.0).to_radians();
+    let ah = (vh.norm() / if alt < 2_500.0 { 5.0 } else { 2.5 }).min(ah_avail).min(az.max(0.5) * tilt.tan());
+    let dir_h = if vh.norm() > 1e-3 { -vh.unit() } else { Vec3::ZERO };
+    let a_cmd = up * az + dir_h * ah;
+    let a_mag = a_cmd.norm();
+    let dir = if a_mag > 1e-6 { a_cmd / a_mag } else { up };
+    // Enquanto o eixo não aponta para onde deve, o motor alivia (senão empurra
+    // para o lado errado durante o giro).
+    let err = v.att.forward().angle(dir).to_degrees();
+    let align = (1.0 - (err - 8.0).max(0.0) / 30.0).clamp(0.15, 1.0);
+    v.set_throttle((a_mag / a_max * align).clamp(0.0, 1.0));
+    // Fica com o rolamento atual (o "baixo" da nave, tirado da frente), para
+    // o giro gastar tudo na direção do empuxo.
+    let mut down = v.att.rotate(Vec3::Z);
+    if down.cross(dir).norm() < 0.3 {
+        down = if dir.dot(up).abs() < 0.9 { -up } else { Vec3::Z.cross(up).unit() };
+    }
+    v.guidance.att_cmd = Some(Quat::look(dir, down));
+    v.guidance.t_go = alt / v_down.max(0.1);
 }
 
 // ───────────────────────── Encontro e acoplamento ─────────────────────────

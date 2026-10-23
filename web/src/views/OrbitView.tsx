@@ -19,7 +19,7 @@ export function OrbitView() {
   return (
     <div className="grid">
       <div className="grid cols-3">
-        <Panel title={`${t('Órbita')} · ${v.name} · ${v.central_name ?? v.central}`} className="span-2" flush>
+        <Panel title={`${t('Órbita')} · ${v.name} · ${tx(v.central_name ?? v.central)}`} className="span-2" flush>
           <Suspense fallback={<div className="loading muted" style={{ height: 440 }}>{t('Carregando a vista 3D…')}</div>}>
             <Orbit3D vehicle={v.id} prediction={pred.points} height={440} />
           </Suspense>

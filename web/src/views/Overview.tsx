@@ -63,7 +63,7 @@ export function Overview() {
                     <span className="dot" style={{ background: kindColor(x.kind) }} /> {x.name}
                   </td>
                   <td>{tx(x.phase_name)}</td>
-                  <td>{x.central_name ?? x.central}</td>
+                  <td>{tx(x.central_name ?? x.central)}</td>
                   <td className="num">{distance(x.alt)}</td>
                   <td className="num">{num(x.speed, 0)} m/s</td>
                   <td className="num">{x.pe != null && x.ap != null && x.phase !== 'prelaunch' ? `${num(x.pe, 0)} × ${num(x.ap, 0)}` : '—'}</td>
@@ -102,7 +102,7 @@ function Summary({ v }: { v: Vehicle }) {
       </div>
       <div className="tiles">
         <Tile label={t('Tempo de missão')} value={met(v.met ?? null)} />
-        <Tile label={t('Posição')} value={v.central === 'earth' || v.kind === 'ksp' ? latlon(v.lat, v.lon) : v.central} title={v.central_name} />
+        <Tile label={t('Posição')} value={v.central === 'earth' || v.kind === 'ksp' ? latlon(v.lat, v.lon) : `${latlon(v.lat, v.lon)} · ${tx(v.central_name ?? v.central)}`} title={tx(v.central_name)} />
         <Tile label={t('Altitude')} value={distance(v.alt)} />
         <Tile label={t('Velocidade')} value={num(v.speed, 0)} unit="m/s" />
         {v.tm && (inAir || v.phase === 'ascent' || v.phase === 'entry' || v.phase === 'descent') && (
@@ -151,6 +151,7 @@ export function programName(p: string): string {
       entry: 'Reentrada',
       docking: 'Acoplamento',
       rtls: 'Retorno ao local',
+      powereddescent: 'Descida propulsada',
       none: 'Nenhum',
     } as Record<string, string>
   )[p] ?? p

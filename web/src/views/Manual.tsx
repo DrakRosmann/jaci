@@ -313,6 +313,13 @@ function ControlPanel({ v, replay }: { v: Vehicle; replay: boolean }) {
               </CmdButton>
             </Guarded>
           ))}
+          {v.landing === 'legs' && !['landed', 'destroyed'].includes(v.phase) && (
+            <Guarded label={t('DESCIDA PROPULSADA')}>
+              <CmdButton vehicle={id} cmd="pdi" className={v.guidance?.program === 'powereddescent' ? 'active' : ''}>
+                {t('PDI · DESCER E POUSAR')}
+              </CmdButton>
+            </Guarded>
+          )}
           {v.kind === 'shuttle' && (
             <CmdButton vehicle={id} cmd="gear" className={v.gear_down ? 'active' : ''}>
               {t('TREM')}

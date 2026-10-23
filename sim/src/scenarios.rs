@@ -2,7 +2,7 @@
 
 use crate::bodies::Body;
 use crate::catalog;
-use crate::math::{DEG, Quat};
+use crate::math::{DEG, Quat, Vec3};
 use crate::orbit::{Elements, state_from_elements};
 use crate::subsystems::AttMode;
 use crate::vehicle::*;
@@ -29,6 +29,8 @@ pub const SCENARIOS: &[ScenarioInfo] = &[
     ScenarioInfo { id: "observacao", name: "Satélite de observação em operação", description: "Imageamento, gravador de bordo, passagens nas estações e modo de segurança" },
     ScenarioInfo { id: "marte", name: "Sonda a Marte", description: "Pilha em órbita de estacionamento na janela de 2026: porkchop, injeção, cruzeiro com correções e captura" },
     ScenarioInfo { id: "lua", name: "Sonda lunar", description: "Injeção translunar da órbita de estacionamento e inserção em órbita da Lua" },
+    ScenarioInfo { id: "pouso-lua", name: "Pouso na Lua", description: "Módulo lunar em 15 × 110 km, chegando ao perilúnio: comande a descida propulsada (PDI) e pouse nas pernas" },
+    ScenarioInfo { id: "pouso-marte", name: "Pouso em Marte", description: "Sonda entrando na atmosfera de Marte: escudo, paraquedas supersônico e descida propulsada automática até o solo" },
     ScenarioInfo { id: "ksp", name: "Kerbal Space Program (kOS)", description: "Sem veículos simulados: o Jaci acompanha e comanda as naves do KSP pelo kOS" },
 ];
 
@@ -217,6 +219,34 @@ pub fn build(id: &str, t: f64, seed: u64) -> Option<World> {
             v.site = Some(catalog::site("Cabo Canaveral"));
             if let Some(s) = &mut v.systems {
                 s.adcs.mode = AttMode::Prograde;
+            }
+            w.add_vehicle(v);
+        }
+        "pouso-lua" => {
+            let mut v = catalog::build("modulo_lunar")?;
+            // 15 × 110 km, uns 30° antes do perilúnio (≈ 10 min). Como no Apollo,
+            // o perilúnio (e a descida) fica no lado visível, com enlace com a Terra.
+            place_in_orbit(&mut v, Body::Moon, 15.0, 110.0, 20.0, 0.0, 0.0, -30.0);
+            let (moon, _) = Body::Moon.state_relative_to(Body::Earth, t);
+            let turn = Quat::from_axis_angle(Vec3::Z, (-moon.y).atan2(-moon.x));
+            v.r = turn.rotate(v.r);
+            v.v = turn.rotate(v.v);
+            v.att = Quat::look(-v.v.unit(), -v.r.unit());
+            v.launch_time = Some(t - 86_400.0 * 4.0);
+            if let Some(s) = &mut v.systems {
+                s.adcs.mode = AttMode::Retrograde;
+            }
+            w.add_vehicle(v);
+        }
+        "pouso-marte" => {
+            let mut v = catalog::build("sonda_pouso_marte")?;
+            // Órbita que corta a atmosfera (periastro abaixo do solo): a entrada já
+            // começou, com pico de uns 8,5 g, perto dos 9 g da Phoenix.
+            place_in_orbit(&mut v, Body::Mars, -28.0, 140.0, 25.0, 0.0, 0.0, -75.0);
+            v.att = Quat::look(-v.v.unit(), -v.r.unit());
+            v.launch_time = Some(t - 86_400.0 * 210.0);
+            if let Some(s) = &mut v.systems {
+                s.adcs.mode = AttMode::Retrograde;
             }
             w.add_vehicle(v);
         }

@@ -295,6 +295,8 @@ pub enum LandingMode {
     Splash,
     /// Pista, com trem de pouso (ônibus espacial).
     Runway,
+    /// Pernas de pouso, com motor (Lua, Marte): toca devagar e na vertical.
+    Legs,
     /// Sem pouso previsto.
     None,
 }
@@ -417,6 +419,8 @@ pub enum Program {
     Docking,
     /// Retorno ao local de lançamento (aborto do ônibus espacial).
     Rtls,
+    /// Descida propulsada até pousar nas pernas (Lua, Marte).
+    PoweredDescent,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -491,6 +495,10 @@ pub struct Guidance {
     /// Usa a lei antiga da malha fechada em vez do PEG.
     #[serde(default)]
     pub legacy_ascent: bool,
+    /// Sob o paraquedas, abaixo desta altitude (m), corta o paraquedas e
+    /// começa a descida propulsada (pouso em Marte).
+    #[serde(default)]
+    pub auto_pdi_alt: Option<f64>,
 }
 
 /// Powered Explicit Guidance: fr(t) = A + B·t (+ gravidade menos centrífuga),
@@ -538,6 +546,7 @@ impl Default for Guidance {
             t_go: 0.0,
             peg: None,
             legacy_ascent: false,
+            auto_pdi_alt: None,
         }
     }
 }
@@ -1539,8 +1548,13 @@ impl Vehicle {
         let landed = match self.landing {
             LandingMode::Splash => chutes && sink < 15.0,
             LandingMode::Runway => self.gear_down && sink < 6.0 && horiz < 160.0,
+            // Pernas: aguentam uns 3,5 m/s na vertical e pouco de lado.
+            LandingMode::Legs => sink < 3.5 && horiz < 2.5,
             LandingMode::None => false,
         };
+        if self.guidance.program == Program::PoweredDescent {
+            self.guidance.program = Program::None;
+        }
         let (lat, lon) = (self.derived.lat, self.derived.lon);
         if landed {
             self.phase = if self.landing == LandingMode::Splash { Phase::Splashdown } else { Phase::Landed };

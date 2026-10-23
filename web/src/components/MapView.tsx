@@ -45,11 +45,26 @@ const KIND_COLOR: Record<string, string> = {
 }
 
 /** Lugares conhecidos nos corpos do KSP. */
-const KSP_SITES: Record<string, [string, number, number][]> = {
+/** Locais marcados nos mapas dos outros corpos: bases do KSP e pousos históricos. */
+const SITES: Record<string, [string, number, number][]> = {
   kerbin: [
     ['KSC', -0.0972, -74.5577],
     ['Deserto', -6.5604, -143.95],
     ['Woomerang', 45.29, 136.11],
+  ],
+  moon: [
+    ['Apollo 11', 0.674, 23.473],
+    ['Apollo 15', 26.132, 3.634],
+    ['Apollo 17', 20.191, 30.772],
+    ["Chang'e 4", -45.444, 177.588],
+    ['Luna 9', 7.08, -64.37],
+  ],
+  mars: [
+    ['Viking 1', 22.27, -48.0],
+    ['Phoenix', 68.22, -125.75],
+    ['Curiosity', -4.59, 137.44],
+    ['InSight', 4.5, 135.62],
+    ['Perseverance', 18.44, 77.45],
   ],
 }
 
@@ -89,7 +104,7 @@ export function MapView({
       const Y = (lat: number) => ((90 - lat) / 180) * h
       const dpr = window.devicePixelRatio || 1
       const theme = document.documentElement.dataset.theme ?? ''
-      const key = `${w}x${h}@${dpr}:${center}:${earth}:${land != null}:${theme}`
+      const key = `${w}x${h}@${dpr}:${center}:${body}:${land != null}:${theme}`
       if (base.current?.key !== key) {
         const c = base.current?.canvas ?? document.createElement('canvas')
         c.width = Math.max(1, Math.round(w * dpr))
@@ -97,7 +112,7 @@ export function MapView({
         const b = c.getContext('2d')
         if (b) {
           b.setTransform(dpr, 0, 0, dpr, 0, 0)
-          drawBase(b, w, h, X, Y, earth, center)
+          drawBase(b, w, h, X, Y, body, center)
         }
         base.current = { key, canvas: c }
       }
@@ -105,7 +120,7 @@ export function MapView({
       if (!snap) return
       if (!earth) {
         ctx.font = '10px ui-monospace, monospace'
-        for (const [name, lat, lon] of KSP_SITES[body] ?? []) {
+        for (const [name, lat, lon] of SITES[body] ?? []) {
           ctx.fillStyle = '#9fb4dd'
           ctx.fillRect(X(lon) - 2.5, Y(lat) - 2.5, 5, 5)
           ctx.fillText(name, X(lon) + 6, Y(lat) + 3)
@@ -225,8 +240,12 @@ function cssVar(name: string, fallback: string): string {
   return v || fallback
 }
 
-function drawBase(ctx: CanvasRenderingContext2D, w: number, h: number, X: (l: number) => number, Y: (l: number) => number, earth: boolean, center: number) {
-  ctx.fillStyle = cssVar('--map-sea', '#081426')
+/** Cor do chão dos corpos sem mapa (a Terra usa as cores do tema). */
+const GROUND: Record<string, string> = { moon: '#26272b', mars: '#3d1f14' }
+
+function drawBase(ctx: CanvasRenderingContext2D, w: number, h: number, X: (l: number) => number, Y: (l: number) => number, body: string, center: number) {
+  const earth = body === 'earth'
+  ctx.fillStyle = earth ? cssVar('--map-sea', '#081426') : (GROUND[body] ?? cssVar('--map-sea', '#081426'))
   ctx.fillRect(0, 0, w, h)
   ctx.strokeStyle = cssVar('--map-grid', '#15233f')
   ctx.lineWidth = 1

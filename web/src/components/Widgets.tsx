@@ -53,7 +53,8 @@ function trackSpan(period: number | undefined, pe: number | undefined): number {
 
 export function MapWidget({ height }: { height: number }) {
   const v = useStore((s) => s.selected)
-  const body = v?.kind === 'ksp' ? v.central : 'earth'
+  // O mapa é o do corpo em volta do qual a nave está (no Sol não há mapa).
+  const body = v && v.central !== 'sun' ? v.central : 'earth'
   const pred = usePrediction(v && v.central === body && !['prelaunch', 'landed'].includes(v.phase) ? v.id : null, trackSpan(v?.tm?.['orb.period'] ?? undefined, v?.pe ?? undefined), 5000)
   const vid = v?.id
   const tracks = useMemo<Track[]>(() => (vid != null && pred.points.length ? [{ vehicle: vid, points: pred.points.map((p) => [p[2], p[1]] as [number, number]), color: '#4cc3ff' }] : []), [pred, vid])

@@ -1201,6 +1201,14 @@ impl World {
                 veh!().guidance.landing_target = Some((lat, lon));
                 format!("alvo {:.2}°, {:.2}°", lat, lon)
             }
+            "pdi" => {
+                let mut out = StepOutput::default();
+                crate::guidance::start_powered_descent(&mut self.vehicles[idx], &mut out)?;
+                for (l, txt) in out.events {
+                    self.event(Some(vid), l, txt);
+                }
+                "descida propulsada".into()
+            }
             "entry_mode" => {
                 let ballistic = cmd.str("mode") == Some("ballistic");
                 veh!().guidance.ballistic = ballistic;

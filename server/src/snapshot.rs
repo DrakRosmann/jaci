@@ -170,6 +170,7 @@ fn vehicle(w: &World, v: &Vehicle) -> Value {
         "phase": v.phase.id(),
         "phase_name": v.phase.name(),
         "central": v.central.id(),
+        "central_name": v.central.name(),
         "parent": v.parent,
         "attached_to": v.attached_to,
         "crew": v.crew(),
