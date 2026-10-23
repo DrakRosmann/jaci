@@ -365,6 +365,8 @@ export interface Snapshot {
   warp: number
   paused: boolean
   warp_stop: boolean
+  /** Sol e Lua perturbam as órbitas (terceiros corpos). */
+  third_body?: boolean
   scenario: string
   mission: string
   vehicles: Vehicle[]

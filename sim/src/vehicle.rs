@@ -628,6 +628,44 @@ pub struct Env<'a> {
     pub targets: &'a [TargetInfo],
     /// Passo longo demais para a dinâmica de atitude (alta aceleração do tempo).
     pub coarse: bool,
+    /// Terceiros corpos: (corpo central, posição do que perturba relativa a ele, μ).
+    pub perturbers: &'a [(Body, Vec3, f64)],
+}
+
+/// Aceleração de maré dos terceiros corpos sobre um veículo em `r` (relativo a `central`).
+pub fn third_body_accel(central: Body, r: Vec3, perturbers: &[(Body, Vec3, f64)]) -> Vec3 {
+    let mut a = Vec3::ZERO;
+    for (c, rp, mu) in perturbers {
+        if *c != central {
+            continue;
+        }
+        let d = *rp - r;
+        let dn = d.norm();
+        let pn = rp.norm();
+        a += d * (mu / (dn * dn * dn)) - *rp * (mu / (pn * pn * pn));
+    }
+    a
+}
+
+/// Quem perturba quem: para cada corpo central, os terceiros corpos e onde estão.
+/// Dentro da esfera de influência de um corpo, o Sol e a Lua (ou a Terra, na
+/// Lua). No cruzeiro heliocêntrico, nenhum: as cônicas remendadas do
+/// planejador contam com isso, e a Terra logo depois da esfera ainda puxaria
+/// a sonda bem mais que o modelo prevê.
+pub fn perturbers_at(centrals: &[Body], t: f64) -> Vec<(Body, Vec3, f64)> {
+    let mut out = Vec::new();
+    for &c in centrals {
+        let others: &[Body] = match c {
+            Body::Earth => &[Body::Sun, Body::Moon],
+            Body::Moon => &[Body::Sun, Body::Earth],
+            Body::Sun => &[],
+            _ => &[Body::Sun],
+        };
+        for &p in others {
+            out.push((c, p.state_relative_to(c, t).0, p.mu()));
+        }
+    }
+    out
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1301,14 +1339,17 @@ impl Vehicle {
         } else {
             0.0
         };
-        let extra = self.guidance.rcs_accel;
-        if extra.norm2() > 0.0 {
+        let rcs = self.guidance.rcs_accel;
+        if rcs.norm2() > 0.0 {
             if let Some(sys) = &mut self.systems {
                 // RCS de translação: isp ~220 s.
-                let used = mass * extra.norm() * h / (220.0 * G0);
+                let used = mass * rcs.norm() * h / (220.0 * G0);
                 sys.adcs.rcs_prop = (sys.adcs.rcs_prop - used).max(0.0);
             }
         }
+        // Sol e Lua (ou o que perturba este corpo central): constante no passo, que é
+        // curto perto do tempo em que eles mudam.
+        let extra = rcs + third_body_accel(self.central, self.r, env.perturbers);
         let forces = Forces {
             thrust,
             mass,

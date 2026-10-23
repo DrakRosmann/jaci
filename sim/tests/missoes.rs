@@ -405,3 +405,29 @@ fn arquivo_vsb30_pesado_sobe_menos_e_cai_no_mar() {
     assert!(apogee > 100.0 && apogee < 240.0, "apogeu {apogee}");
     assert_eq!(v.phase, Phase::Splashdown);
 }
+
+/// Satélite geoestacionário com inclinação zero, por `dias`, com ou sem terceiros corpos.
+fn geo_drift(third_body: bool, dias: f64) -> f64 {
+    let mut w = World::new(t0(), 1);
+    w.third_body = third_body;
+    let mut v = jaci_sim::catalog::build("amazonia").unwrap();
+    scenarios::place_in_orbit(&mut v, jaci_sim::bodies::Body::Earth, 35_786.0, 35_786.0, 0.0, 0.0, 0.0, 0.0);
+    let vid = w.add_vehicle(v);
+    let end = w.t + dias * 86_400.0;
+    while w.t < end {
+        w.step(120.0);
+    }
+    orbit_of(&w, vid).2
+}
+
+#[test]
+fn sol_e_lua_inclinam_o_geoestacionario() {
+    // Sem terceiros corpos, o J2 sozinho não muda a inclinação; com o Sol e a
+    // Lua, um geoestacionário ganha de 0,75° a 0,95° por ano, conforme o nodo
+    // da Lua (perto do máximo em 2025–2026).
+    let sem = geo_drift(false, 60.0);
+    let com = geo_drift(true, 365.0);
+    println!("inclinação: {sem:.4}° em 60 dias sem, {com:.3}° em um ano com o Sol e a Lua");
+    assert!(sem < 0.01, "sem perturbação: {sem}");
+    assert!(com > 0.8 && com < 1.0, "com perturbação: {com}°/ano");
+}

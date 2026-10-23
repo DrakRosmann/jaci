@@ -313,7 +313,7 @@ impl Body {
             Body::Earth => return None,
             Body::Moon => {
                 // Termos periódicos principais (o polo da Lua oscila alguns graus).
-                let e = |c: f64, r: f64| ((c + r * d) * DEG);
+                let e = |c: f64, r: f64| (c + r * d) * DEG;
                 let (e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13) = (
                     e(125.045, -0.052_992_1),
                     e(250.089, -0.105_984_2),

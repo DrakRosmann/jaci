@@ -1361,4 +1361,7 @@ export const EN: Record<string, string> = {
   'regra de bordo não manda comando perigoso': 'an onboard rule does not send hazardous commands',
   'comando desconhecido': 'unknown command',
   'Inclinação no equador do corpo': 'Inclination to the body equator',
+  'Dentro da esfera de influência de cada corpo: o Sol e a Lua (ou a Terra, na Lua) somam a força de maré deles': 'Inside each body sphere of influence the Sun and the Moon (or the Earth, at the Moon) add their tidal pull',
+  'Sol e Lua perturbam as órbitas': 'Sun and Moon perturb the orbits',
+  'só o corpo central (com J2)': 'central body only (with J2)',
 }

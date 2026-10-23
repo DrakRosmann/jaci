@@ -212,9 +212,12 @@ ficam desligados. Ao vivo, o botão CSV do console de telemetria baixa os últim
 
 ## A física
 
-* **Mecânica orbital:** dois corpos com J2, elementos keplerianos, propagação em variáveis
-  universais, Lambert, Hohmann, bielíptica, Clohessy-Wiltshire. Cônicas remendadas: o veículo troca
-  de corpo central ao cruzar a esfera de influência (Terra, Lua, Sol, planetas).
+* **Mecânica orbital:** corpo central com J2 mais a maré dos terceiros corpos — o Sol e a Lua dentro
+  da esfera da Terra, o Sol e a Terra na da Lua, o Sol na dos planetas (um geoestacionário ganha
+  0,93° de inclinação por ano, como os de verdade; desliga no Instrutor); elementos keplerianos,
+  propagação em variáveis universais, Lambert, Hohmann, bielíptica, Clohessy-Wiltshire. Cônicas
+  remendadas: o veículo troca de corpo central ao cruzar a esfera de influência (Terra, Lua, Sol,
+  planetas).
 * **Efemérides:** elementos médios de Standish (JPL, 1800–2050) para os planetas, elementos médios
   com regressão dos nodos para a Lua, calculados em Tempo Terrestre (TT = UTC + segundos
   intercalares + 32,184 s, pela tabela do IERS); tempo sideral de Greenwich; WGS-84.
@@ -334,8 +337,9 @@ da Terra, corrige a trajetória duas vezes, chega com o periastro pedido e entra
 
 ## Limitações conhecidas
 
-* Cônicas remendadas: sem perturbação de terceiro corpo dentro de cada esfera de influência, e a
-  Lua tem órbita média (erro de alguns graus).
+* Cônicas remendadas: no cruzeiro heliocêntrico só o Sol puxa (o planejador conta com isso), e a
+  Lua tem órbita média (erro de alguns graus). O traço previsto e o planejador usam só o corpo
+  central com J2.
 * Os elementos orbitais (`orb.inc`, `orb.raan`…) ficam no equador da Terra (J2000) em qualquer
   corpo, para o planejador; a inclinação no equador do corpo central vai em `orb.inc_eq`.
 * A atitude dos foguetes e dos veículos em alta aceleração do tempo é cinemática (gira com taxa

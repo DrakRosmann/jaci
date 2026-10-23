@@ -144,9 +144,16 @@ pub struct World {
     /// Falhas planejadas e o registro do treino (para o relatório).
     #[serde(default)]
     pub training: TrainingLog,
+    /// Perturbação dos terceiros corpos (Sol, Lua…) ligada.
+    #[serde(default = "yes")]
+    pub third_body: bool,
     /// Injetando falha sem avisar a equipe (veja `inject_as`).
     #[serde(skip)]
     pub(crate) quiet_fault: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 impl World {
@@ -178,6 +185,7 @@ impl World {
             externals: Vec::new(),
             tracked: Vec::new(),
             training: TrainingLog { start: Some(t), ..Default::default() },
+            third_body: true,
             quiet_fault: false,
         }
     }
@@ -375,6 +383,15 @@ impl World {
                 port_offset: v.ports.iter().find(|p| p.occupant.is_none()).map_or(15.0, |p| p.offset),
             })
             .collect();
+        // Terceiros corpos, uma vez por passo para cada corpo central em uso.
+        let perturbers = if self.third_body {
+            let mut centrals: Vec<Body> = self.vehicles.iter().filter(|v| !matches!(v.phase, Phase::Prelaunch | Phase::Landed) && !v.phase.is_final()).map(|v| v.central).collect();
+            centrals.sort_by_key(|b| b.id());
+            centrals.dedup();
+            crate::vehicle::perturbers_at(&centrals, t)
+        } else {
+            Vec::new()
+        };
         let env = Env {
             t,
             wind_speed: self.weather.surface_wind,
@@ -382,6 +399,7 @@ impl World {
             wind_from: self.weather.wind_from,
             targets: &targets,
             coarse: self.warp >= 50.0,
+            perturbers: &perturbers,
         };
         let mut spawned = Vec::new();
         let mut events = Vec::new();

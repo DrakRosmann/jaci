@@ -990,6 +990,10 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
             w.paused = false;
             ok("rodando")
         }
+        "third_body" => {
+            w.third_body = msg.get("value").and_then(|x| x.as_bool()).unwrap_or(true);
+            ok(if w.third_body { "Sol e Lua perturbam as órbitas" } else { "só o corpo central (com J2)" })
+        }
         "warp_stop" => {
             w.warp_stop = msg.get("value").and_then(|x| x.as_bool()).unwrap_or(true);
             ok("ok")

@@ -386,6 +386,7 @@ pub fn snapshot_value(a: &App, since: u64) -> Value {
         "warp": w.warp,
         "paused": w.paused,
         "warp_stop": w.warp_stop,
+        "third_body": w.third_body,
         "scenario": w.scenario,
         "mission": w.mission,
         "vehicles": vehicles,

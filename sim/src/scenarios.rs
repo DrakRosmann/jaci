@@ -80,7 +80,7 @@ fn station(w: &mut World, t: f64) -> VehicleId {
     if let Some(s) = &mut st.systems {
         s.adcs.mode = AttMode::Nadir;
     }
-    st.att = st.attitude_target(&Env { t, wind_speed: 0.0, wind_jet: 0.0, wind_from: 0.0, targets: &[], coarse: true }).unwrap_or(st.att);
+    st.att = st.attitude_target(&Env { t, wind_speed: 0.0, wind_jet: 0.0, wind_from: 0.0, targets: &[], coarse: true, perturbers: &[] }).unwrap_or(st.att);
     st.launch_time = Some(t - 86_400.0 * 900.0);
     w.add_vehicle(st)
 }
@@ -137,7 +137,7 @@ pub fn build(id: &str, t: f64, seed: u64) -> Option<World> {
                         v.r = r;
                         v.v = vel;
                         // A atitude acompanha (senão a estação começa fora do apontamento).
-                        let env = Env { t: t_now, wind_speed: 0.0, wind_jet: 0.0, wind_from: 0.0, targets: &[], coarse: true };
+                        let env = Env { t: t_now, wind_speed: 0.0, wind_jet: 0.0, wind_from: 0.0, targets: &[], coarse: true, perturbers: &[] };
                         if let Some(q) = v.attitude_target(&env) {
                             v.att = q;
                         }

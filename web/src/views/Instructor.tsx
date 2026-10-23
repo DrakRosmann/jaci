@@ -57,6 +57,9 @@ export function Instructor() {
         <label className="small" style={{ display: 'block', marginTop: 8 }}>
           <input type="checkbox" checked={snap.warp_stop} onChange={(e) => store.sim('warp_stop', { value: e.target.checked })} /> {t('voltar para 1× num alarme')}
         </label>
+        <label className="small" style={{ display: 'block' }} title={t('Dentro da esfera de influência de cada corpo: o Sol e a Lua (ou a Terra, na Lua) somam a força de maré deles')}>
+          <input type="checkbox" checked={snap.third_body ?? true} onChange={(e) => store.sim('third_body', { value: e.target.checked })} /> {t('Sol e Lua perturbam as órbitas')}
+        </label>
         <p className="small muted">{t('Em aceleração alta a atitude passa a ser cinemática e os subsistemas são avaliados em passos maiores.')}</p>
         <button onClick={() => store.sim('remove_debris').then(result)}>{t('Remover detritos caídos')}</button>
       </Panel>
