@@ -343,6 +343,42 @@ const cases = [
     },
   ],
   [
+    'treino: falha planejada silenciosa, procedimento e relatório',
+    async () => {
+      const s = await server('estacao')
+      try {
+        const c = s.ws
+        const snap = await until(c, 'instantâneo', (x) => x.vehicles.length > 0)
+        const st = snap.vehicles.find((v) => v.kind === 'station')
+        const pf = await c.request({ type: 'sim', action: 'plan_fault', vehicle: st.id, fault: 'cabin_leak', arg: '1', when: 'in', value: 20, announce: false })
+        assert(pf.ok, `planejar: ${pf.error}`)
+        const plan = await c.request({ type: 'sim', action: 'fault_plan' })
+        assert(plan.plan.length === 1 && plan.plan[0].due > snap.t, 'plano')
+        assert(!JSON.stringify(c.snap).includes('cabin_leak'), 'o plano vazou no instantâneo')
+        await c.request({ type: 'sim', action: 'proc_log', vehicle: st.id, procedure: 'Despressurização', kind: 'start', total: 5 })
+        await c.request({ type: 'sim', action: 'warp', value: 100 })
+        for (let i = 0; i < 50; i++) {
+          const p = await c.request({ type: 'sim', action: 'fault_plan' })
+          if (p.plan[0].plan.state.state === 'done') break
+          await sleep(100)
+        }
+        const done = await c.request({ type: 'sim', action: 'fault_plan' })
+        assert(done.plan[0].plan.state.state === 'done', `não disparou: ${JSON.stringify(done.plan[0].plan.state)}`)
+        assert(!c.events.some((e) => e.text.includes('[Instrutor]')), 'falha silenciosa avisou a equipe')
+        assert(c.events.some((e) => e.text.startsWith('Procedimento iniciado')), 'procedimento não apareceu nos eventos')
+        const rep = await c.request({ type: 'sim', action: 'report' })
+        assert(rep.report.faults.length === 1 && rep.report.faults[0].planned, 'relatório sem a falha')
+        assert(rep.report.procedures.length === 1, 'relatório sem o procedimento')
+        assert(rep.report.score.total >= 0 && rep.report.score.total <= 100, 'nota')
+        await c.request({ type: 'sim', action: 'report_reset' })
+        const rep2 = await c.request({ type: 'sim', action: 'report' })
+        assert(rep2.report.faults.length === 0, 'recomeçar não limpou')
+      } finally {
+        s.close()
+      }
+    },
+  ],
+  [
     'marte: porkchop',
     async () => {
       const s = await server('marte')

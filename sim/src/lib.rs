@@ -10,6 +10,7 @@ pub mod orbit;
 pub mod subsystems;
 pub mod time;
 pub mod tracked;
+pub mod training;
 pub mod vehicle;
 pub mod commands;
 pub mod ground;

@@ -112,7 +112,8 @@ os eventos, `l` troca a língua e `?` lista os atalhos (nenhum manda comando a v
   telemetria (contagem, ativação de satélite, reentrada, acoplamento, despressurização, bateria
   baixa, descarga de dados, injeção interplanetária, reimpulso).
 * **Instrutor (SIM):** cenários, aceleração do tempo (até 100 000×, volta a 1× num alarme), estados
-  salvos, gravações da missão para o debriefing, clima e injeção de falhas: motor, vazamento de propelente, célula da bateria, painel solar
+  salvos, gravações da missão para o debriefing, clima, falhas planejadas, relatório do treino e
+  injeção de falhas: motor, vazamento de propelente, célula da bateria, painel solar
   travado ou degradado, roda de reação, girômetros, rastreador de estrelas, transmissor, aquecedor,
   vazamento na cabine, remoção de CO₂, paraquedas, célula a combustível, barco na área, falha de solo
   e tempestade.
@@ -144,6 +145,22 @@ internet). O servidor propaga cada um com o SGP4: aparecem no mapa, na vista 3D,
 gráficos e nas gravações como os simulados, com as passagens nas estações e a visada ao vivo, mas
 sem comandos. A idade do TLE vira um ponto de telemetria com alarme (o erro cresce alguns km por
 dia). A lista fica em `satelites.tle`, ao lado dos estados salvos, e continua ao trocar de cenário.
+
+## Treino
+
+No console **Instrutor**, além de injetar falhas na hora (avisando a equipe ou não), dá para
+planejá-las: daqui a N s, numa hora UTC ou em T+N s depois do lançamento de um veículo; com uma
+janela aleatória (o instante é sorteado dentro dela), uma chance de acontecer (sorteada ao planejar)
+e até o tipo aleatório (uma falha que sirva àquele veículo). Por padrão as planejadas são
+silenciosas: a equipe tem de descobrir pelos sintomas. O plano não vai no instantâneo; só aparece
+no console do instrutor.
+
+O **relatório do treino** mostra, desde o começo do cenário (ou desde "Recomeçar"): cada falha com
+o tempo até o primeiro alarme e até o primeiro comando ao veículo; cada alarme com o tempo até ser
+reconhecido; os procedimentos seguidos (início, passos e duração, informados pelo console de
+procedimentos); o desfecho dos veículos; e uma nota indicativa — a média da reação aos alarmes
+(100% até 30 s, zero a partir de 3 min) e da resposta às falhas (100% com comando em até 2 min, 50%
+em até 10 min), cortada pela metade se um veículo foi perdido. Sai em Markdown para arquivar.
 
 ## Gravação e debriefing
 

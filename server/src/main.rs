@@ -870,7 +870,8 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
             let id = vid(msg);
             let f = msg.get("fault").and_then(|x| x.as_str()).unwrap_or("");
             let arg = msg.get("arg").and_then(|x| x.as_str().map(String::from).or_else(|| x.as_f64().map(|n| n.to_string())));
-            match w.inject(id, f, arg.as_deref()) {
+            let announce = msg.get("announce").and_then(|x| x.as_bool()).unwrap_or(true);
+            match w.inject_as(id, f, arg.as_deref(), announce, false) {
                 Ok(m) => ok(&m),
                 Err(e) => json!({"type": "sim_result", "req": req, "ok": false, "error": e}),
             }
@@ -880,13 +881,65 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
             ok("falhas removidas")
         }
         "ack" => {
-            let which = msg.get("value");
-            for al in &mut w.alarms {
-                if which.and_then(|x| x.as_u64()).is_none_or(|n| n == al.id) {
-                    al.acked = true;
-                }
-            }
+            w.ack(msg.get("value").and_then(|x| x.as_u64()));
             ok("reconhecido")
+        }
+        "plan_fault" => {
+            let id = vid(msg);
+            let f = msg.get("fault").and_then(|x| x.as_str()).unwrap_or("random");
+            if f != "random" && !jaci_sim::world::FAULTS.iter().any(|(k, _, _)| *k == f) {
+                return json!({"type": "sim_result", "req": req, "ok": false, "error": "falha desconhecida"});
+            }
+            let arg = msg.get("arg").and_then(|x| x.as_str().map(String::from).or_else(|| x.as_f64().map(|n| n.to_string()))).filter(|s| !s.is_empty());
+            let num = |k: &str| msg.get(k).and_then(|x| x.as_f64().or_else(|| x.as_str().and_then(|s| s.replace(',', ".").parse().ok())));
+            let value = num("value").unwrap_or(0.0);
+            let when = match msg.get("when").and_then(|x| x.as_str()).unwrap_or("in") {
+                "met" => jaci_sim::training::FaultWhen::Met(value),
+                "at" => match msg.get("at").and_then(|x| x.as_str()).and_then(parse_utc) {
+                    Some(t) => jaci_sim::training::FaultWhen::At(t),
+                    None => return json!({"type": "sim_result", "req": req, "ok": false, "error": "hora inválida (AAAA-MM-DD HH:MM:SS)"}),
+                },
+                _ => jaci_sim::training::FaultWhen::At(w.t + value),
+            };
+            let window = num("window").unwrap_or(0.0);
+            let probability = num("probability").unwrap_or(1.0);
+            let announce = msg.get("announce").and_then(|x| x.as_bool()).unwrap_or(false);
+            let n = w.plan_fault(id, f, arg, when, window, probability, announce);
+            ok(&format!("falha planejada nº {n}"))
+        }
+        "unplan_fault" => {
+            if w.unplan_fault(msg.get("id").and_then(|x| x.as_u64()).unwrap_or(0) as u32) {
+                ok("falha retirada do plano")
+            } else {
+                json!({"type": "sim_result", "req": req, "ok": false, "error": "não está no plano"})
+            }
+        }
+        "fault_plan" => {
+            // Só para o console do instrutor (não vai no instantâneo: a equipe não vê).
+            let plan: Vec<Value> = w
+                .training
+                .plan
+                .iter()
+                .map(|f| {
+                    let name = w.vehicle(f.vehicle).map(|v| v.name.clone()).unwrap_or_else(|| format!("#{}", f.vehicle));
+                    json!({"plan": f, "vehicle_name": name, "due": w.plan_due(f)})
+                })
+                .collect();
+            json!({"type": "fault_plan", "req": req, "plan": plan, "t": w.t})
+        }
+        "report" => json!({"type": "report", "req": req, "report": w.report()}),
+        "report_reset" => {
+            w.reset_training();
+            ok("relatório recomeçado")
+        }
+        "proc_log" => {
+            let id = vid(msg);
+            let name = msg.get("procedure").and_then(|x| x.as_str()).unwrap_or("?");
+            let kind = msg.get("kind").and_then(|x| x.as_str()).unwrap_or("step");
+            let step = msg.get("step").and_then(|x| x.as_u64()).map(|x| x as u32);
+            let total = msg.get("total").and_then(|x| x.as_u64()).map(|x| x as u32);
+            w.log_procedure(id, name, kind, step, total);
+            ok("ok")
         }
         "station" => {
             let id = msg.get("id").and_then(|x| x.as_str()).unwrap_or("");

@@ -23,8 +23,16 @@ export function Procedures() {
   const key = v && proc ? `${proc.id}:${v.id}` : ''
   const run = runs[key]
 
+  // O servidor anota início, passos e fim, para o registro de eventos e o relatório do treino.
+  const log = (r: Run, kind: 'start' | 'step' | 'done', step?: number) => {
+    const p = PROCEDURES.find((x) => x.id === r.proc)
+    if (p) store.sim('proc_log', { vehicle: r.vehicle, procedure: p.name, kind, step, total: p.steps.length }).catch(() => {})
+  }
+
   const advance = (r: Run) => {
     setRuns((all) => ({ ...all, [key]: { ...r, step: r.step + 1, done: [...r.done, { step: r.step, t: store.snap!.t }] } }))
+    log(r, 'step', r.step)
+    if (proc && r.step + 1 >= proc.steps.length) log(r, 'done')
   }
 
   // Avança sozinho nas esperas cumpridas.
@@ -36,7 +44,11 @@ export function Procedures() {
 
   if (!v || !proc) return <Empty>{t('Selecione um veículo.')}</Empty>
 
-  const start = () => setRuns({ ...runs, [key]: { proc: proc.id, vehicle: v.id, step: 0, done: [], auto: true } })
+  const start = () => {
+    const r: Run = { proc: proc.id, vehicle: v.id, step: 0, done: [], auto: true }
+    setRuns({ ...runs, [key]: r })
+    log(r, 'start')
+  }
 
   const exec = async (p: Procedure, r: Run) => {
     const step = p.steps[r.step]

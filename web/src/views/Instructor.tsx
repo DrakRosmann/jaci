@@ -4,6 +4,7 @@ import { t, tx } from '../lib/i18n'
 import { met } from '../lib/format'
 import { store, useStore } from '../lib/store'
 import type { RecordingEntry } from '../types'
+import { FaultPlan, TrainingReport } from './Training'
 
 export function Instructor() {
   const hello = useStore((s) => s.hello)!
@@ -13,6 +14,7 @@ export function Instructor() {
   const [start, setStart] = useState('')
   const [fault, setFault] = useState(hello.faults[0]?.id ?? '')
   const [arg, setArg] = useState('1')
+  const [announce, setAnnounce] = useState(true)
   const [saveName, setSaveName] = useState('estado')
   const [saves, setSaves] = useState<string[]>([])
   const [wx, setWx] = useState({ surface_wind: '', wind_from: '', jet_wind: '', lightning_km: '', ceiling_m: '' })
@@ -106,15 +108,19 @@ export function Instructor() {
           )}
         </div>
         <div className="row" style={{ marginTop: 8 }}>
-          <button className="danger" disabled={!v} onClick={() => store.sim('fault', { vehicle: v?.id, fault, arg }).then(result)}>
+          <button className="danger" disabled={!v} onClick={() => store.sim('fault', { vehicle: v?.id, fault, arg, announce }).then(result)}>
             {t('Injetar')}
           </button>
+          <label className="small" title={t('Sem aviso, a equipe tem de descobrir a falha pelos sintomas')}>
+            <input type="checkbox" checked={announce} onChange={(e) => setAnnounce(e.target.checked)} /> {t('avisar a equipe')}
+          </label>
           <button disabled={!v} onClick={() => store.sim('clear_faults', { vehicle: v?.id }).then(result)}>
             {t('Remover falhas')}
           </button>
         </div>
         {v?.faults && v.faults.length > 0 && <div className="small warn" style={{ marginTop: 6 }}>{t('Ativas')}: {v.faults.join(', ')}</div>}
       </Panel>
+      <FaultPlan />
       <Panel title={t('Clima')}>
         <div className="form">
           {(
@@ -149,6 +155,7 @@ export function Instructor() {
           </label>
         </div>
       </Panel>
+      <TrainingReport />
       <Panel title={t('Catálogo de veículos')} flush>
         <div style={{ maxHeight: 320, overflowY: 'auto' }}>
           {hello.catalog.map((c) => (

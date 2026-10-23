@@ -10,6 +10,7 @@ use crate::orbit::{propagate_kepler, rtn_to_inertial};
 use crate::subsystems::AttMode;
 use crate::telemetry::{self, LimitState};
 use crate::tracked::Tracked;
+use crate::training::{AlarmLog, TrainingLog};
 use crate::vehicle::*;
 use serde::{Deserialize, Serialize};
 
@@ -140,6 +141,12 @@ pub struct World {
     /// Satélites reais acompanhados por TLE (SGP4).
     #[serde(default)]
     pub tracked: Vec<Tracked>,
+    /// Falhas planejadas e o registro do treino (para o relatório).
+    #[serde(default)]
+    pub training: TrainingLog,
+    /// Injetando falha sem avisar a equipe (veja `inject_as`).
+    #[serde(skip)]
+    pub(crate) quiet_fault: bool,
 }
 
 impl World {
@@ -170,6 +177,8 @@ impl World {
             next_periodic: 0.0,
             externals: Vec::new(),
             tracked: Vec::new(),
+            training: TrainingLog { start: Some(t), ..Default::default() },
+            quiet_fault: false,
         }
     }
 
@@ -293,6 +302,10 @@ impl World {
     pub fn step(&mut self, h: f64) {
         let t = self.t;
         self.weather.evolve(h, &mut self.rng);
+        // Falhas planejadas pelo instrutor que chegaram na hora.
+        if !self.training.plan.is_empty() {
+            self.run_fault_plan();
+        }
         // Contagem regressiva.
         if let Some(id) = self.launch.vehicle {
             let link = self.vehicle(id).is_some_and(|v| v.phase == Phase::Prelaunch);
@@ -484,8 +497,11 @@ impl World {
                     if st != LimitState::Nominal {
                         new_alarms.push((v.id, d.id.clone(), d.name.clone(), st, *val, d.unit.to_string()));
                     } else {
-                        for a in self.alarms.iter_mut().filter(|a| a.vehicle == v.id && a.point == d.id) {
+                        for a in self.alarms.iter_mut().filter(|a| a.vehicle == v.id && a.point == d.id && a.active) {
                             a.active = false;
+                            if let Some(l) = self.training.alarms.iter_mut().find(|l| l.id == a.id) {
+                                l.cleared_at.get_or_insert(self.t);
+                            }
                         }
                     }
                 }
@@ -498,6 +514,7 @@ impl World {
                 a.active = false;
             }
             self.alarms.push(Alarm { id, t: self.t, vehicle: vid, point: point.clone(), name: name.clone(), level: st, value: val, unit: unit.clone(), acked: false, active: true });
+            self.training.alarms.push(AlarmLog { id, t: self.t, vehicle: vid, name: name.clone(), level: st, acked_at: None, cleared_at: None });
             let level = if st == LimitState::Red { Level::Alarm } else { Level::Warn };
             self.event(Some(vid), level, format!("{}: {} {:.2} {}", if st == LimitState::Red { "LIMITE VERMELHO" } else { "Limite amarelo" }, name, val, unit));
         }
@@ -1435,7 +1452,9 @@ impl World {
         if let Some(v) = self.vehicle_mut(vid) {
             v.faults.push(fault.into());
         }
-        self.event(Some(vid), Level::Warn, format!("[Instrutor] Falha injetada: {}", msg));
+        if !self.quiet_fault {
+            self.event(Some(vid), Level::Warn, format!("[Instrutor] Falha injetada: {}", msg));
+        }
         Ok(msg)
     }
 
