@@ -1,0 +1,7 @@
+# O satélite de observação em operação, com a regra de bordo da bateria
+# ligada: injete "Célula da bateria perdida" ou "Metade de uma asa solar
+# perdida" no instrutor e veja a proteção agir sozinha.
+name = "Satélite com regra de bordo"
+description = "Satélite de observação em operação com a regra de bordo que protege a bateria (script)"
+base = "observacao"
+scripts = ["bateria-de-bordo"]

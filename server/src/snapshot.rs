@@ -401,6 +401,7 @@ pub fn snapshot_value(a: &App, since: u64) -> Value {
         "ksp": ksp,
         "recording": a.recorder.as_ref().map(|r| r.status()),
         "room": room(a),
+        "scripts": a.scripts.status(),
     })
 }
 

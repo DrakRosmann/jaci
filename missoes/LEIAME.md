@@ -16,4 +16,15 @@ cada arquivo salvo pelo editor do console **Instrutor**, que também confere e m
   `separated`, `inserted`, `launch.state`, `launch.t_minus`, `launch.all_go`; números, textos
   entre aspas, `<`, `<=`, `>`, `>=`, `==`, `!=`, `and`, `or`, `not` e parênteses.
 
+* `scripts/<nome>.rhai` — automação em [Rhai](https://rhai.rs): roda inteiro a cada segundo de
+  simulação, lê o estado e pede ações. Leitura: `t()`, `vehicles()`, `vehicle("nome")` (id, ou
+  -1), `tm(id, "eps.soc")` (NaN sem o ponto), `phase(id)`, `met(id)`, `link(id)`,
+  `alarm(id, "ponto")` (`"red"`, `"yellow"` ou vazio), `alarms(id)`, `count_state()`, `t_minus()`.
+  Ações: `cmd(id, "comando", #{ arg: valor })` (de solo: passa pelo enlace, com o atraso da
+  luz), `cmd_armed(…)` (perigoso), `onboard(id, "comando", #{…})` (regra de bordo: executa na hora,
+  nunca perigoso), `log("…")`, `warn("…")`. `mem` guarda o que quiser de uma vez para a outra;
+  `once("chave")` é verdadeiro só na primeira vez e `every(segundos, "chave")` de tempos em tempos.
+  Liga e desliga no console **Instrutor**, ou pelo cenário (`scripts = ["nome"]`). Erro ou laço
+  sem fim desliga o script, com o motivo no registro de eventos.
+
 O id é o nome do arquivo e não pode repetir um do catálogo ou um cenário pronto.

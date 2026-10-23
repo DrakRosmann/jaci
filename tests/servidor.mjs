@@ -473,6 +473,41 @@ const cases = [
     },
   ],
   [
+    'scripts: conferir, salvar, ligar, rodar e o cenário que liga sozinho',
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'jaci-scripts-'))
+      cpSync(new URL('../missoes', import.meta.url).pathname, dir, { recursive: true })
+      const s = await server('estacao', ['--missions-dir', dir])
+      try {
+        const c = s.ws
+        await until(c, 'scripts no instantâneo', (x) => x.scripts?.length >= 2)
+        const bad = await c.request({ type: 'sim', action: 'file_validate', sub: 'scripts', id: 'ruim', text: 'let x = ;' })
+        assert(!bad.ok, 'script com erro de sintaxe aceito')
+        const src = 'let e = vehicle("Estação espacial");\nif every(5.0, "eco") { log(`altitude ${tm(e, "nav.alt").round().to_int()} km`); }\n'
+        const saved = await c.request({ type: 'sim', action: 'file_save', sub: 'scripts', id: 'eco', text: src })
+        assert(saved.ok, `salvar: ${saved.error}`)
+        assert(existsSync(join(dir, 'scripts', 'eco.rhai')), 'arquivo .rhai')
+        const on = await c.request({ type: 'sim', action: 'script_enable', name: 'eco', value: true })
+        assert(on.ok, `ligar: ${on.error}`)
+        await c.request({ type: 'sim', action: 'warp', value: 10 })
+        await until(c, 'script rodando', (x) => x.scripts.find((y) => y.name === 'eco')?.runs > 5, 10000)
+        assert(c.events.some((e) => /^\[script eco\] altitude 4\d\d km$/.test(e.text)), `eventos: ${c.events.slice(-5).map((e) => e.text)}`)
+        // O cenário de arquivo liga o script que pede.
+        const ld = await c.request({ type: 'sim', action: 'scenario', value: 'satelite-autonomo' })
+        assert(ld.type === 'reload', `cenário: ${ld.error}`)
+        const c2 = await connect(s.port)
+        try {
+          await until(c2, 'regra de bordo ligada', (x) => x.scripts?.find((y) => y.name === 'bateria-de-bordo')?.enabled)
+        } finally {
+          c2.close()
+        }
+      } finally {
+        s.close()
+        rmSync(dir, { recursive: true, force: true })
+      }
+    },
+  ],
+  [
     'marte: porkchop',
     async () => {
       const s = await server('marte')

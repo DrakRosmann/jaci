@@ -90,6 +90,7 @@ export function Instructor() {
         </table>
       </Panel>
       <RoomPanel />
+      <ScriptsPanel />
       <Recordings />
       <Panel title={t('Injeção de falhas')}>
         <div className="form">
@@ -283,6 +284,36 @@ function RoomPanel() {
       ) : (
         <p className="small muted">{t('Ninguém entrou numa posição ainda.')}</p>
       )}
+    </Panel>
+  )
+}
+
+/** Automação por script: ligar, desligar e ver se está rodando. */
+function ScriptsPanel() {
+  const list = useStore((s) => s.snap?.scripts ?? [])
+  const result = (r: { ok?: boolean; error?: string; message?: string }) => toast(r.ok === false ? tx(r.error) : tx(r.message) || t('feito'), r.ok === false ? 'bad' : 'good')
+  return (
+    <Panel title={t('Scripts de automação')}>
+      {list.length === 0 ? (
+        <p className="small muted">{t('Nenhum script em missoes/scripts. Crie um no editor de missões, abaixo.')}</p>
+      ) : (
+        <table>
+          <tbody>
+            {list.map((s) => (
+              <tr key={s.name}>
+                <td>
+                  <label>
+                    <input type="checkbox" checked={s.enabled} onChange={(e) => store.sim('script_enable', { name: s.name, value: e.target.checked }).then(result)} /> <span className="mono">{s.name}</span>
+                  </label>
+                  {s.error && <div className="small bad">{s.error}</div>}
+                </td>
+                <td className="num small muted">{s.runs > 0 ? `${s.runs} ${t('execuções')}` : ''}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <p className="small muted">{t('Rodam a cada segundo de simulação: cmd() manda pelo enlace, onboard() executa a bordo na hora. Erro ou laço sem fim desliga o script.')}</p>
     </Panel>
   )
 }

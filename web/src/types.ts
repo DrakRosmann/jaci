@@ -383,6 +383,8 @@ export interface Snapshot {
   /** Presente quando o servidor está reproduzindo uma gravação. */
   replay?: ReplayInfo | null
   room?: Room
+  /** Scripts de automação: ligados, execuções e o último erro. */
+  scripts?: { name: string; enabled: boolean; error: string | null; runs: number }[]
 }
 
 export interface RecordingStatus {

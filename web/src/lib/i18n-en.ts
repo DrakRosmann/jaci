@@ -1349,4 +1349,15 @@ export const EN: Record<string, string> = {
   'arquivo correto': 'file is valid',
   'salvo em': 'saved to',
   'dê um nome ao arquivo (letras, números, - e _)': 'name the file (letters, digits, - and _)',
+
+  // ── Scripts ──
+  'Scripts': 'Scripts',
+  'Scripts de automação': 'Automation scripts',
+  'Nenhum script em missoes/scripts. Crie um no editor de missões, abaixo.': 'No scripts in missoes/scripts. Create one in the missions editor below.',
+  'execuções': 'runs',
+  'Rodam a cada segundo de simulação: cmd() manda pelo enlace, onboard() executa a bordo na hora. Erro ou laço sem fim desliga o script.': 'They run every simulated second: cmd() goes over the link, onboard() executes on board right away. An error or endless loop turns the script off.',
+  'Script do cenário': 'Scenario script',
+  'script desconhecido': 'unknown script',
+  'regra de bordo não manda comando perigoso': 'an onboard rule does not send hazardous commands',
+  'comando desconhecido': 'unknown command',
 }

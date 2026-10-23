@@ -7,7 +7,7 @@ import { Panel, toast } from '../components/ui'
 import { t, tx } from '../lib/i18n'
 import { store } from '../lib/store'
 
-type Sub = 'veiculos' | 'cenarios' | 'procedimentos'
+type Sub = 'veiculos' | 'cenarios' | 'procedimentos' | 'scripts'
 
 interface FileEntry {
   sub: Sub
@@ -20,10 +20,23 @@ const SUBS: [Sub, string][] = [
   ['cenarios', 'Cenários'],
   ['veiculos', 'Veículos'],
   ['procedimentos', 'Procedimentos'],
+  ['scripts', 'Scripts'],
 ]
 
 /** Ponto de partida de um arquivo novo. */
 const TEMPLATES: Record<Sub, string> = {
+  scripts: `// Roda a cada segundo de simulação. Veja missoes/LEIAME.md.
+let v = vehicle("Estação espacial");
+if v < 0 { return; }
+
+if tm(v, "eps.soc") < 30.0 && once("aviso bateria") {
+    warn("bateria abaixo de 30 %");
+}
+
+if every(600.0, "relatorio") {
+    log(\`altitude \${tm(v, "nav.alt").round().to_int()} km\`);
+}
+`,
   cenarios: `name = "Meu cenário"
 description = "O que acontece neste cenário"
 # start = "2026-11-05 12:00:00"   # sem isto: agora (ou a hora pedida)
@@ -160,7 +173,7 @@ export function Missions() {
               ))}
             </select>
             <input className="mono" value={id} onChange={(e) => setId(e.target.value)} placeholder={t('nome-do-arquivo')} style={{ flex: 1 }} aria-label={t('Nome do arquivo')} />
-            <span className="mono small muted">.toml</span>
+            <span className="mono small muted">{sub === 'scripts' ? '.rhai' : '.toml'}</span>
           </div>
           <textarea className="mono" value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} rows={22} placeholder={t('Abra um arquivo ou comece um novo.')} />
           {msg && <pre className={`small ${msg.ok ? 'good' : 'bad'}`} style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{msg.text}</pre>}

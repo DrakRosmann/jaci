@@ -82,12 +82,18 @@ tripulação, alvo de pouso…) ou monta uma pilha nova de estágios e motores; 
 na plataforma ou em órbita, com hora, clima, aceleração, satélites reais e falhas planejadas; um
 procedimento tem passos de nota, verificação, comando e espera por uma condição
 (`until = "eps.soc > 80 and phase == 'orbit'"`). Os cenários de arquivo aparecem na lista junto dos
-prontos (e em `jaci --list`), e os procedimentos no console de procedimentos. O console
+prontos (e em `jaci --list`), e os procedimentos no console de procedimentos. Scripts em [Rhai](https://rhai.rs) (`missoes/scripts/*.rhai`) automatizam
+sequências e regras de bordo: rodam a cada segundo de simulação, leem telemetria, fases, alarmes e
+contagem, e mandam comandos de solo (`cmd`, pelo enlace e com o atraso da luz) ou de bordo
+(`onboard`, na hora); `mem`, `once` e `every` montam sequências. Não têm acesso a arquivos nem à
+rede, têm limite de operações por execução e não mandam comando perigoso a bordo; um erro desliga o
+script e diz por quê. Ligam pelo Instrutor ou pelo cenário (`scripts = [...]`). O console
 **Instrutor** tem um editor que confere o arquivo (montando o veículo ou o cenário) antes de salvar
 e avisa as outras telas. O formato está em [`missoes/LEIAME.md`](missoes/LEIAME.md), com
 exemplos: um VSB-30 com carga pesada, um lançador leve montado do zero (que chega a 500 km,
 heliossíncrona, nos testes de voo), um treino com falha de motor sorteada na subida, um cenário
-com a ISS real e um procedimento de bateria baixa.
+com a ISS real, um procedimento de bateria baixa, uma regra de bordo que protege a bateria e uma
+sequência automática de ativação de satélite.
 
 ## Consoles
 

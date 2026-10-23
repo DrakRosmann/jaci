@@ -311,6 +311,9 @@ pub struct ScenarioFile {
     /// Falhas planejadas para o treino.
     #[serde(default)]
     pub faults: Vec<FaultFile>,
+    /// Scripts (missoes/scripts/<nome>.rhai) ligados ao carregar o cenário.
+    #[serde(default)]
+    pub scripts: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

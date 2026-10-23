@@ -30,7 +30,7 @@ pub const ROLES: &[Role] = &[
         description: "Comanda tudo e decide; o único que aprova planos de manobra além do FIDO",
         groups: &["*"],
         launch: &["fd"],
-        sim: &["pause", "resume", "warp", "warp_stop", "record_start", "record_stop", "room_mode"],
+        sim: &["pause", "resume", "warp", "warp_stop", "record_start", "record_stop", "room_mode", "script_enable"],
     },
     Role {
         id: "LCC",

@@ -5,6 +5,7 @@
 mod ksp;
 mod recording;
 mod room;
+mod scripts;
 mod snapshot;
 
 use anyhow::Context;
@@ -123,6 +124,8 @@ pub struct App {
     pub replay: Option<recording::Replay>,
     /// Veículos, cenários e procedimentos em arquivos.
     pub library: jaci_sim::library::Library,
+    /// Automação por script (missoes/scripts/*.rhai).
+    pub scripts: scripts::Scripts,
     pub missions_dir: PathBuf,
     /// Sala com posições e permissões.
     pub room: bool,
@@ -143,6 +146,7 @@ impl App {
     /// Lê de novo a pasta de missões; devolve a mensagem para as interfaces.
     fn reload_library(&mut self) -> String {
         self.library = jaci_sim::library::Library::load(&self.missions_dir);
+        self.scripts.load(&self.missions_dir.join("scripts"));
         for (f, e) in &self.library.errors {
             tracing::warn!("missões: {f}: {e}");
         }
@@ -221,6 +225,16 @@ impl App {
         }
     }
 
+    /// Liga os scripts que o cenário de arquivo pede.
+    fn scenario_scripts(&mut self) {
+        let wanted = self.library.scenarios.get(&self.world.scenario).map(|f| f.scripts.clone()).unwrap_or_default();
+        for name in wanted {
+            if let Err(e) = self.scripts.set_enabled(&name, true) {
+                self.world.event(None, jaci_sim::vehicle::Level::Warn, format!("Script do cenário: {e}"));
+            }
+        }
+    }
+
     /// Mundo novo (cenário ou estado): os satélites reais continuam na lista.
     fn replace_world(&mut self, nw: World) {
         let sats = std::mem::take(&mut self.world.tracked);
@@ -231,6 +245,7 @@ impl App {
         }
         self.sent_events = self.world.event_seq;
         self.sync_staffed();
+        self.scenario_scripts();
     }
 
     /// Termina a gravação em andamento, se houver.
@@ -386,6 +401,11 @@ async fn main() -> anyhow::Result<()> {
         satellites_file,
         recordings_dir: recordings_dir(&args, &states),
         library,
+        scripts: {
+            let mut sc = scripts::Scripts::new();
+            sc.load(&mdir.join("scripts"));
+            sc
+        },
         missions_dir: mdir,
         recorder: None,
         replay: None,
@@ -404,6 +424,7 @@ async fn main() -> anyhow::Result<()> {
     {
         let mut a = app.lock().unwrap();
         a.sent_events = a.world.event_seq;
+        a.scenario_scripts();
         if args.record {
             match a.start_recording(None) {
                 Ok(m) => tracing::info!("{m} em {}", a.recordings_dir.display()),
@@ -452,6 +473,10 @@ async fn main() -> anyhow::Result<()> {
                     continue;
                 }
                 a.world.advance(dt);
+                {
+                    let App { scripts, world, .. } = &mut *a;
+                    scripts.tick(world);
+                }
                 if now - last_snap >= Duration::from_millis(200) {
                     last_snap = now;
                     if let Some(dict) = snapshot::dictionary_if_changed(&mut a) {
@@ -1190,11 +1215,20 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
                 let (sub, file) = f.split_once('/').unwrap_or(("", f));
                 list.push(json!({"sub": sub, "id": file.trim_end_matches(".toml"), "name": null, "error": e}));
             }
+            for sc in &a.scripts.list {
+                list.push(json!({"sub": "scripts", "id": sc.name, "name": if sc.enabled { "ligado" } else { "desligado" }, "error": sc.error}));
+            }
             json!({"type": "files", "req": req, "list": list, "dir": a.missions_dir.display().to_string()})
         }
         "file_get" => {
             let sub = msg.get("sub").and_then(|x| x.as_str()).unwrap_or("");
             let id = jaci_sim::library::clean_id(msg.get("id").and_then(|x| x.as_str()).unwrap_or(""));
+            if sub == "scripts" && !id.is_empty() {
+                return match std::fs::read_to_string(a.missions_dir.join("scripts").join(format!("{id}.{}", scripts::EXT))) {
+                    Ok(text) => json!({"type": "file", "req": req, "ok": true, "sub": sub, "id": id, "text": text}),
+                    Err(e) => json!({"type": "file", "req": req, "ok": false, "error": e.to_string()}),
+                };
+            }
             if !jaci_sim::library::KINDS.iter().any(|(k, _)| *k == sub) || id.is_empty() {
                 return json!({"type": "file", "req": req, "ok": false, "error": "arquivo inválido"});
             }
@@ -1207,16 +1241,18 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
             let sub = msg.get("sub").and_then(|x| x.as_str()).unwrap_or("");
             let id = jaci_sim::library::clean_id(msg.get("id").and_then(|x| x.as_str()).unwrap_or(""));
             let text = msg.get("text").and_then(|x| x.as_str()).unwrap_or("");
-            if !jaci_sim::library::KINDS.iter().any(|(k, _)| *k == sub) || id.is_empty() {
+            let script = sub == "scripts";
+            if !(script || jaci_sim::library::KINDS.iter().any(|(k, _)| *k == sub)) || id.is_empty() {
                 return json!({"type": "sim_result", "req": req, "ok": false, "error": "dê um nome ao arquivo (letras, números, - e _)"});
             }
-            if let Err(e) = a.library.validate(sub, &id, text) {
+            let checked = if script { a.scripts.compile(text).map(|_| ()) } else { a.library.validate(sub, &id, text) };
+            if let Err(e) = checked {
                 return json!({"type": "sim_result", "req": req, "ok": false, "error": e, "id": id});
             }
             if action == "file_validate" {
                 return json!({"type": "sim_result", "req": req, "ok": true, "message": "arquivo correto", "id": id});
             }
-            let path = a.missions_dir.join(sub).join(format!("{id}.toml"));
+            let path = a.missions_dir.join(sub).join(format!("{id}.{}", if script { scripts::EXT } else { "toml" }));
             if let Err(e) = std::fs::create_dir_all(a.missions_dir.join(sub)).and_then(|_| std::fs::write(&path, text)) {
                 return json!({"type": "sim_result", "req": req, "ok": false, "error": e.to_string()});
             }
@@ -1226,6 +1262,18 @@ fn sim(a: &mut App, msg: &Value, req: &Value) -> Value {
         "files_reload" => {
             let lib = a.reload_library();
             json!({"type": "sim_result", "req": req, "ok": true, "message": format!("{} arquivo(s) com erro", a.library.errors.len()), "broadcast": lib})
+        }
+        "script_enable" => {
+            let name = msg.get("name").and_then(|x| x.as_str()).unwrap_or("");
+            let on = msg.get("value").and_then(|x| x.as_bool()).unwrap_or(true);
+            match a.scripts.set_enabled(name, on) {
+                Ok(()) => {
+                    let m = format!("Script {name} {}", if on { "ligado" } else { "desligado" });
+                    a.world.event(None, jaci_sim::vehicle::Level::Info, &m);
+                    json!({"type": "sim_result", "req": req, "ok": true, "message": m})
+                }
+                Err(e) => json!({"type": "sim_result", "req": req, "ok": false, "error": e}),
+            }
         }
         "room_mode" => {
             a.room = msg.get("value").and_then(|x| x.as_bool()).unwrap_or(!a.room);
